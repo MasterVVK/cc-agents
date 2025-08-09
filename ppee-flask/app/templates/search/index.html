@@ -1,0 +1,836 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="page-header">
+        <div class="header-title">
+            <h1>Семантический поиск</h1>
+            {% if current_user.is_admin() or current_user.is_prompt_engineer() %}
+            <label class="checkbox-label">
+                <input type="checkbox" id="show-all-applications" onchange="toggleApplicationsView()">
+                <span>Показать все заявки</span>
+            </label>
+            {% endif %}
+        </div>
+    </div>
+    <div class="search-container">
+        <form id="search-form" method="post" class="search-form">
+            <div class="form-group">
+                <label for="application_id">Выберите заявку</label>
+                <select id="application_id" name="application_id" required>
+                    <option value="">-- Выберите заявку --</option>
+                    {% for app in applications %}
+                        <option value="{{ app.id }}"
+                                class="application-option"
+                                data-owner-id="{{ app.user_id if app.user_id else '' }}"
+                                {% if app.user_id != current_user.id %}style="display: none;"{% endif %}>
+                            {{ app.name }} (ID: {{ app.id }})
+                            {% if current_user.is_admin() or current_user.is_prompt_engineer() %}
+                                {% if app.user %}
+                                    - {% if app.user.id == current_user.id %}Вы{% else %}{{ app.user.username }}{% endif %}
+                                {% endif %}
+                            {% endif %}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="query">Поисковый запрос</label>
+                <input type="text" id="query" name="query" placeholder="Введите поисковый запрос..." required>
+            </div>
+
+            <h3>Настройки поиска</h3>
+
+            <div class="form-row">
+                <div class="form-group half-width">
+                    <label for="search_limit">Количество результатов</label>
+                    <select id="search_limit" name="search_limit">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                        <option value="8">8</option>
+                    </select>
+                    <p class="form-note">Количество результатов поиска для отображения</p>
+                </div>
+
+                <div class="form-group half-width">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="use_reranker" name="use_reranker" value="true">
+                        <label for="use_reranker">Использовать ререйтинг</label>
+                    </div>
+                    <p class="form-note">Ререйтинг улучшает качество результатов, но требует больше ресурсов</p>
+                </div>
+            </div>
+
+            <div class="form-group rerank-limit-container" style="display: none;">
+                <label for="rerank_limit">Количество документов для ререйтинга</label>
+                <select id="rerank_limit" name="rerank_limit">
+                    <option value="5">5</option>
+                    <option value="10" selected>10</option>
+                    <option value="15">15</option>
+                    <option value="20">20</option>
+                    <option value="30">30</option>
+                    <option value="9999">Все чанки в заявке</option>
+                </select>
+                <p class="form-note">Количество документов, извлекаемых для применения ререйтинга</p>
+            </div>
+
+            <!-- Добавляем настройки для умного/гибридного поиска -->
+            <div class="form-group">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="use_smart_search" name="use_smart_search" value="true" checked>
+                    <label for="use_smart_search">Использовать умный поиск</label>
+                </div>
+                <p class="form-note">Автоматически выбирает метод поиска в зависимости от длины запроса</p>
+            </div>
+
+            <div id="hybrid-settings" style="display: none;">
+                <h3>Настройки гибридного поиска</h3>
+                <div class="form-row">
+                    <div class="form-group half-width">
+                        <label for="vector_weight">Вес векторного поиска</label>
+                        <input type="number" id="vector_weight" name="vector_weight" min="0" max="1" step="0.1" value="0.5">
+                        <p class="form-note">Значение от 0.0 до 1.0, влияет на важность семантического поиска</p>
+                    </div>
+                    <div class="form-group half-width">
+                        <label for="text_weight">Вес текстового поиска</label>
+                        <input type="number" id="text_weight" name="text_weight" min="0" max="1" step="0.1" value="0.5">
+                        <p class="form-note">Значение от 0.0 до 1.0, влияет на важность полнотекстового поиска</p>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="hybrid_threshold">Порог для гибридного поиска</label>
+                    <input type="number" id="hybrid_threshold" name="hybrid_threshold" min="1" max="100" value="50">
+                    <p class="form-note">Длина запроса в символах, при которой используется гибридный поиск</p>
+                </div>
+            </div>
+
+            <h3>Настройки LLM для обработки результатов (опционально)</h3>
+
+            <div class="form-group">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="use_llm" name="use_llm" value="true">
+                    <label for="use_llm">Обработать результаты через LLM</label>
+                </div>
+                <p class="form-note">Извлечение конкретного значения из результатов поиска с помощью LLM</p>
+            </div>
+
+            <div id="llm-settings" style="display: none;">
+                <div class="form-group">
+                    <label for="llm_model">Модель LLM</label>
+                    <select id="llm_model" name="llm_model">
+                        {% for model in available_models %}
+                            <option value="{{ model }}" {% if model == default_llm_model %}selected{% endif %}>{{ model }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="llm_prompt_template">Промпт к LLM</label>
+                    <textarea id="llm_prompt_template" name="llm_prompt_template" rows="10" placeholder="Введите промпт...">{{ default_prompt }}</textarea>
+                    <p class="form-note">Используйте {query} для вставки поискового запроса и {context} для вставки контекста из найденных документов</p>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group half-width">
+                        <label for="llm_temperature">Temperature</label>
+                        <input type="number" id="llm_temperature" name="llm_temperature" step="0.1" min="0" max="1" value="0.1">
+                        <p class="form-note">Значение от 0.0 до 1.0, влияет на креативность ответов</p>
+                    </div>
+
+                    <div class="form-group half-width">
+                        <label for="llm_max_tokens">Max Tokens</label>
+                        <input type="number" id="llm_max_tokens" name="llm_max_tokens" min="100" max="4000" value="1000">
+                        <p class="form-note">Максимальная длина ответа в токенах</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" id="search-button" class="button">Выполнить поиск</button>
+                <button type="button" id="stop-button" class="button button-danger" style="display: none;">Остановить поиск</button>
+            </div>
+        </form>
+
+        <!-- Индикатор прогресса для поиска (БЕЗ СТАДИЙ) -->
+        <div id="search-progress" class="search-progress" style="display: none;">
+            <h3>Выполнение поиска</h3>
+            <div class="progress">
+                <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated"
+                     role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" style="width: 0%"></div>
+            </div>
+            <p id="status-message">Выполняется поиск...</p>
+        </div>
+
+        <!-- Контейнер для результатов -->
+        <div id="results-container" class="results-container" style="display: none;">
+            <h2>Результаты поиска</h2>
+            <div id="results-stats" class="results-stats"></div>
+
+            <!-- Блок для отображения результата LLM -->
+            <div id="llm-result" class="llm-result" style="display: none;">
+                <h3>Извлеченное значение (LLM)</h3>
+                <div class="info-card">
+                    <div id="llm-value" class="llm-value"></div>
+                    <div id="llm-confidence" class="confidence-container">
+                        <p>Уверенность:</p>
+                        <div class="confidence-bar">
+                            <div id="confidence-value" class="confidence-value" style="width: 0%"></div>
+                            <span id="confidence-text">0%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h3>Найденные чанки</h3>
+            <div id="search-results" class="search-results"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Элементы для управления отображением настроек
+            const useRerankerCheckbox = document.getElementById('use_reranker');
+            const rerankLimitContainer = document.querySelector('.rerank-limit-container');
+            const useLlmCheckbox = document.getElementById('use_llm');
+            const llmSettings = document.getElementById('llm-settings');
+
+            // Элементы для гибридного поиска
+            const useSmartSearchCheckbox = document.getElementById('use_smart_search');
+            const hybridSettings = document.getElementById('hybrid-settings');
+
+            // Элементы формы и результатов
+            const searchForm = document.getElementById('search-form');
+            const resultsContainer = document.getElementById('results-container');
+            const resultsStats = document.getElementById('results-stats');
+            const searchResults = document.getElementById('search-results');
+            const llmResult = document.getElementById('llm-result');
+            const llmValue = document.getElementById('llm-value');
+            const confidenceValue = document.getElementById('confidence-value');
+            const confidenceText = document.getElementById('confidence-text');
+
+            // Кнопки управления
+            const searchButton = document.getElementById('search-button');
+            const stopButton = document.getElementById('stop-button');
+
+            // Переменные для отслеживания задачи
+            let searchTracker = null;
+            let currentTaskId = null;
+
+            // Добавляем переменные для динамического обновления опции "Все чанки"
+            const applicationSelect = document.getElementById('application_id');
+            const rerankLimitSelect = document.getElementById('rerank_limit');
+            const allChunksOption = rerankLimitSelect.querySelector('option[value="9999"]');
+
+            // Функция для обновления текста опции "Все чанки"
+            async function updateAllChunksOption() {
+                const applicationId = applicationSelect.value;
+
+                if (!applicationId || !allChunksOption) {
+                    return;
+                }
+
+                try {
+                    // Сохраняем исходный текст
+                    allChunksOption.textContent = 'Все чанки в заявке (загрузка...)';
+
+                    // Запрашиваем статистику
+                    const response = await fetch(`/applications/${applicationId}/api/stats`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        const totalChunks = data.total_chunks || 0;
+                        allChunksOption.textContent = `Все чанки в заявке (${totalChunks})`;
+                    } else {
+                        allChunksOption.textContent = 'Все чанки в заявке';
+                    }
+                } catch (error) {
+                    console.error('Ошибка при получении количества чанков:', error);
+                    allChunksOption.textContent = 'Все чанки в заявке';
+                }
+            }
+
+            // Функция для обновления отображения настроек ререйтинга
+            function updateRerankSettings() {
+                if (useRerankerCheckbox.checked) {
+                    rerankLimitContainer.style.display = 'block';
+                    // Обновляем количество чанков при показе настроек
+                    if (applicationSelect.value) {
+                        updateAllChunksOption();
+                    }
+                } else {
+                    rerankLimitContainer.style.display = 'none';
+                }
+            }
+
+            // Функция для обновления отображения настроек LLM
+            function updateLlmSettings() {
+                if (useLlmCheckbox.checked) {
+                    llmSettings.style.display = 'block';
+                } else {
+                    llmSettings.style.display = 'none';
+                }
+            }
+
+            // Функция для обновления отображения настроек гибридного поиска
+            function updateHybridSettings() {
+                if (useSmartSearchCheckbox.checked) {
+                    hybridSettings.style.display = 'block';
+                } else {
+                    hybridSettings.style.display = 'none';
+                }
+            }
+
+            // Функция для отображения результатов
+            function showResults(data) {
+                // Скрываем прогресс
+                document.getElementById('search-progress').style.display = 'none';
+
+                // Показываем кнопку поиска, скрываем кнопку остановки
+                searchButton.style.display = 'inline-block';
+                stopButton.style.display = 'none';
+
+                // Если поиск был отменен
+                if (data.status === 'cancelled') {
+                    resultsContainer.style.display = 'block';
+                    resultsStats.innerHTML = '<p class="alert alert-warning">Поиск был остановлен пользователем.</p>';
+                    searchResults.innerHTML = '';
+                    return;
+                }
+
+                // Показываем результаты
+                resultsContainer.style.display = 'block';
+
+                // Отображаем статистику и информацию о методе поиска
+                let searchMethodText = "";
+                if (data.use_smart_search) {
+                    if (data.search_method === "hybrid") {
+                        searchMethodText = "Использован <strong>гибридный поиск</strong> (короткий запрос)";
+                    } else {
+                        searchMethodText = "Использован <strong>векторный поиск</strong> (длинный запрос)";
+                    }
+                } else if (data.use_reranker) {
+                    searchMethodText = "Использован <strong>векторный поиск с ререйтингом</strong>";
+                } else {
+                    searchMethodText = "Использован <strong>векторный поиск</strong>";
+                }
+
+                const statsText = `Найдено результатов: <strong>${data.count}</strong>. ${searchMethodText}`;
+
+                resultsStats.innerHTML = `<p>${statsText}</p>`;
+                if (data.execution_time) {
+                    resultsStats.innerHTML += `<p>Время выполнения: <strong>${data.execution_time}</strong> сек.</p>`;
+                }
+
+                // Отображаем результат LLM, если есть
+                if (data.llm_result) {
+                    llmResult.style.display = 'block';
+                    llmValue.textContent = data.llm_result.value;
+
+                    // Устанавливаем индикатор уверенности
+                    const confidence = data.llm_result.confidence * 100;
+                    confidenceValue.style.width = `${confidence}%`;
+                    confidenceText.textContent = `${Math.round(confidence)}%`;
+
+                    // Меняем цвет индикатора в зависимости от уверенности
+                    if (confidence > 75) {
+                        confidenceValue.style.backgroundColor = '#28a745'; // зеленый
+                    } else if (confidence > 50) {
+                        confidenceValue.style.backgroundColor = '#ffc107'; // желтый
+                    } else {
+                        confidenceValue.style.backgroundColor = '#dc3545'; // красный
+                    }
+                } else {
+                    llmResult.style.display = 'none';
+                }
+
+                // Очищаем предыдущие результаты
+                searchResults.innerHTML = '';
+
+                // Добавляем новые результаты
+                if (data.results && data.results.length > 0) {
+                    data.results.forEach(result => {
+                        const resultItem = document.createElement('div');
+                        resultItem.className = 'result-item';
+
+                        // Подготавливаем информацию о релевантности и методе поиска
+                        let scoreHtml = `<span class="result-score">Релевантность: ${result.score}</span>`;
+                        let searchTypeDisplay = "";
+
+                        if (result.search_type === "hybrid") {
+                            searchTypeDisplay = `<span class="result-search-type result-hybrid">Гибридный поиск</span>`;
+                        } else if (result.search_type === "text") {
+                            searchTypeDisplay = `<span class="result-search-type result-text">Текстовый поиск</span>`;
+                        } else {
+                            searchTypeDisplay = `<span class="result-search-type result-vector">Векторный поиск</span>`;
+                        }
+
+                        if (data.use_reranker && result.rerank_score) {
+                            scoreHtml = `
+                                <span class="result-score-rerank">Релевантность (ререйтинг): ${result.rerank_score}</span>
+                                <span class="result-score">Релевантность (векторная): ${result.score}</span>
+                            `;
+                        }
+
+                        resultItem.innerHTML = `
+                            <div class="result-header">
+                                <span class="result-position">${result.position}</span>
+                                <div class="result-meta">
+                                    <span class="result-document">Фаил: ${result.document_name}</span>
+                                    <span class="result-page">Страница: ${result.page_number || 'Не указана'}</span>
+                                    ${searchTypeDisplay}
+                                    ${scoreHtml}
+                                </div>
+                            </div>
+                            <div class="result-content">${result.text}</div>
+                        `;
+
+                        searchResults.appendChild(resultItem);
+                    });
+                } else {
+                    searchResults.innerHTML = '<p class="no-results">По вашему запросу ничего не найдено</p>';
+                }
+            }
+
+            // Функция для обработки ошибки с восстановлением интерфейса
+            function handleSearchError(error) {
+                // Восстанавливаем кнопки
+                searchButton.style.display = 'inline-block';
+                stopButton.style.display = 'none';
+
+                // Скрываем прогресс
+                document.getElementById('search-progress').style.display = 'none';
+
+                // Показываем ошибку
+                resultsContainer.style.display = 'block';
+                resultsStats.innerHTML = `<p class="alert alert-error">Ошибка при выполнении поиска: ${error.message || 'Неизвестная ошибка'}</p>`;
+                searchResults.innerHTML = '';
+            }
+
+            // Обработчик кнопки остановки
+            stopButton.addEventListener('click', function() {
+                if (currentTaskId) {
+                    // Отправляем запрос на остановку задачи
+                    fetch(`/search/cancel/${currentTaskId}`, {
+                        method: 'POST'
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        console.log('Задача остановлена:', data);
+
+                        // Останавливаем трекер
+                        if (searchTracker) {
+                            searchTracker._stopTracking();
+                        }
+
+                        // Показываем сообщение об отмене
+                        showResults({
+                            status: 'cancelled',
+                            count: 0,
+                            results: []
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Ошибка при остановке задачи:', error);
+                        handleSearchError(error);
+                    });
+                }
+            });
+
+            // Обработчик отправки формы
+            searchForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+
+                // Сбрасываем предыдущий трекер
+                if (searchTracker) {
+                    searchTracker._stopTracking();
+                }
+
+                // Скрываем предыдущие результаты
+                resultsContainer.style.display = 'none';
+                llmResult.style.display = 'none';
+
+                // Переключаем кнопки
+                searchButton.style.display = 'none';
+                stopButton.style.display = 'inline-block';
+
+                // Формируем данные для отправки
+                const formData = new FormData(searchForm);
+
+                // Показываем прогресс-контейнер
+                document.getElementById('search-progress').style.display = 'block';
+
+                // Создаем новый трекер прогресса для поиска
+                searchTracker = new TaskProgressTracker({
+                    statusUrl: "/search/status",
+                    progressBarId: "progress-bar",
+                    statusMessageId: "status-message",
+                    progressContainerId: "search-progress",
+                    resultsContainerId: "results-container",
+                    onComplete: showResults,
+                    onError: handleSearchError,
+                    checkInterval: 500
+                });
+
+                // Отправляем запрос на поиск
+                fetch('/search/execute', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'pending') {
+                        // Сохраняем ID задачи
+                        currentTaskId = data.task_id;
+
+                        // Получен ID задачи - начинаем отслеживать прогресс
+                        console.log("Начинаем отслеживание задачи", data.task_id);
+                        searchTracker.startTracking(data.task_id);
+                    } else if (data.status === 'error') {
+                        // Показываем ошибку
+                        console.error("Ошибка запуска задачи:", data);
+                        handleSearchError(data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Ошибка при запуске задачи поиска:', error);
+                    handleSearchError({
+                        message: `Ошибка при запуске задачи: ${error.message}`
+                    });
+                });
+            });
+
+            // Обновляем при смене заявки
+            applicationSelect.addEventListener('change', updateAllChunksOption);
+
+            // Инициализация и установка обработчиков событий
+            updateRerankSettings();
+            updateLlmSettings();
+            updateHybridSettings();
+            useRerankerCheckbox.addEventListener('change', updateRerankSettings);
+            useLlmCheckbox.addEventListener('change', updateLlmSettings);
+            useSmartSearchCheckbox.addEventListener('change', updateHybridSettings);
+            // Текущий ID пользователя
+            const currentUserId = {{ current_user.id }};
+
+            // Функция переключения вида заявок
+            function toggleApplicationsView() {
+                const checkbox = document.getElementById('show-all-applications');
+                const select = document.getElementById('application_id');
+                const options = select.querySelectorAll('.application-option');
+
+                // Сохраняем текущее выбранное значение
+                const currentValue = select.value;
+                let currentValueVisible = false;
+
+                options.forEach(option => {
+                    const ownerId = option.getAttribute('data-owner-id');
+
+                    if (checkbox.checked) {
+                        // Показать все заявки
+                        option.style.display = '';
+                        if (option.value === currentValue) {
+                            currentValueVisible = true;
+                        }
+                        } else {
+                            // Показать только свои заявки
+                            if (ownerId && parseInt(ownerId) === currentUserId) {
+                                option.style.display = '';
+                            } else {
+                                option.style.display = 'none';
+                            }
+                        }
+                });
+
+                // Если текущее выбранное значение скрыто, сбрасываем выбор
+                if (!currentValueVisible && currentValue) {
+                    select.value = '';
+                    updateAllChunksOption(); // Обновляем опцию "Все чанки"
+                }
+            }
+            window.toggleApplicationsView = toggleApplicationsView;
+
+            // При загрузке страницы скрываем чужие заявки для админов и промпт-инженеров
+            {% if current_user.is_admin() or current_user.is_prompt_engineer() %}
+            toggleApplicationsView();
+            {% endif %}
+        });
+    </script>
+
+    <style>
+        /* Стили для кнопки остановки */
+        .button-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .button-danger:hover {
+            background-color: #c82333;
+        }
+
+        /* Стили для уведомлений */
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+        }
+
+        .alert-warning {
+            color: #856404;
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+        }
+
+        .alert-error {
+            color: #721c24;
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+        }
+
+        /* Стили для результатов поиска */
+        .llm-result {
+            margin-bottom: 20px;
+        }
+
+        .llm-value {
+            font-size: 1.2rem;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+            margin-bottom: 10px;
+        }
+
+        .result-item {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .result-header {
+            display: flex;
+            margin-bottom: 10px;
+        }
+
+        .result-position {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-right: 15px;
+            background-color: #007bff;
+            color: white;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        .result-meta {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .result-document, .result-page, .result-score, .result-score-rerank, .result-search-type {
+            font-size: 0.9rem;
+            color: #6c757d;
+            margin-bottom: 3px;
+        }
+
+        .result-score-rerank {
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        .result-search-type {
+            font-weight: bold;
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            margin-bottom: 5px;
+        }
+
+        .result-hybrid {
+            background-color: #e6f3ff;
+            color: #0066cc;
+        }
+
+        .result-text {
+            background-color: #f0fff0;
+            color: #006600;
+        }
+
+        .result-vector {
+            background-color: #fff0f0;
+            color: #cc0000;
+        }
+
+        .result-content {
+            white-space: pre-line;
+            font-family: monospace;
+            background-color: white;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        /* Стили для контейнера ошибок */
+        .error-container {
+            margin: 20px 0;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .error-message {
+            color: #721c24;
+        }
+
+        .error-message h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        .error-message button {
+            margin-top: 10px;
+        }
+
+        /* Стили для прогресс-бара поиска */
+        .search-progress {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+
+        .progress {
+            height: 20px;
+            margin: 15px 0;
+            background-color: #e9ecef;
+            border-radius: 0.25rem;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            color: #fff;
+            text-align: center;
+            background-color: #007bff;
+            transition: width .6s ease;
+        }
+
+        .progress-bar-striped {
+            background-image: linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
+            background-size: 1rem 1rem;
+        }
+
+        .progress-bar-animated {
+            animation: progress-bar-stripes 1s linear infinite;
+        }
+
+        @keyframes progress-bar-stripes {
+            from { background-position: 1rem 0 }
+            to { background-position: 0 0 }
+        }
+
+        /* Стили для результатов поиска */
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        .no-results {
+            padding: 20px;
+            text-align: center;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+
+        /* Стиль для отображения уверенности */
+        .confidence-bar {
+            position: relative;
+            height: 20px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .confidence-value {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background-color: #28a745;
+            transition: width 0.3s ease;
+        }
+
+        .confidence-bar span {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            text-align: center;
+            line-height: 20px;
+            color: white;
+            font-weight: bold;
+            text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+            z-index: 1;
+        }
+
+            /* Стили для page-header с чек-боксом */
+    .page-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+    }
+
+    .header-title {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .header-title h1 {
+        margin: 0;
+    }
+
+    /* Стили для чекбокса */
+    .checkbox-label {
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+        font-weight: 500;
+        user-select: none;
+        margin: 0;
+    }
+
+    .checkbox-label input[type="checkbox"] {
+        margin-right: 8px;
+        cursor: pointer;
+    }
+
+    .checkbox-label span {
+        color: #495057;
+        white-space: nowrap;
+    }
+
+    .checkbox-label:hover span {
+        color: #007bff;
+    }
+
+    </style>
+{% endblock %}

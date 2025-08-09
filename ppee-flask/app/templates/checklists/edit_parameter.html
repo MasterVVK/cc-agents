@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="page-header">
+        <h1>Редактирование параметра</h1>
+        <a href="{{ url_for('checklists.view', id=checklist.id) }}" class="button button-secondary">Назад к чек-листу</a>
+    </div>
+    
+    <div class="form-container">
+        <h2>Параметр: {{ parameter.name }}</h2>
+        
+        <form method="post">
+            <div class="form-group">
+                <label for="name">Название параметра</label>
+                <input type="text" id="name" name="name" value="{{ parameter.name }}" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="description">Описание</label>
+                <textarea id="description" name="description" rows="2">{{ parameter.description }}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <label for="search_query">Поисковый запрос</label>
+                <input type="text" id="search_query" name="search_query" value="{{ parameter.search_query }}" required>
+                <p class="form-note">Запрос для семантического поиска в документах (например, "полное наименование юридического лица")</p>
+            </div>
+            
+            <!-- Опция для отдельного LLM запроса -->
+            <div class="form-group">
+                <div class="checkbox-item">
+                    <input type="checkbox"
+                           id="use_separate_llm_query"
+                           name="use_separate_llm_query"
+                           value="true"
+                           {% if parameter.llm_query %}checked{% endif %}>
+                    <label for="use_separate_llm_query">Использовать отдельный запрос для LLM</label>
+                </div>
+                <p class="form-note">Позволяет задать отличающийся от поискового запрос для обработки LLM</p>
+            </div>
+
+            <!-- Скрытое поле для LLM запроса -->
+            <div id="llm-query-settings" style="display: {% if parameter.llm_query %}block{% else %}none{% endif %};">
+                <div class="form-group">
+                    <label for="llm_query">Запрос для LLM</label>
+                    <input type="text" id="llm_query" name="llm_query" value="{{ parameter.llm_query or '' }}">
+                    <p class="form-note">Этот запрос будет использован вместо поискового при обработке результатов через LLM</p>
+                </div>
+            </div>
+
+            <h3>Настройки поиска</h3>
+
+            <div class="form-row">
+                <div class="form-group half-width">
+                    <label for="search_limit">Количество результатов</label>
+                    <select id="search_limit" name="search_limit">
+                        <option value="1" {% if parameter.search_limit == 1 %}selected{% endif %}>1</option>
+                        <option value="2" {% if parameter.search_limit == 2 %}selected{% endif %}>2</option>
+                        <option value="3" {% if parameter.search_limit == 3 %}selected{% endif %}>3</option>
+                        <option value="4" {% if parameter.search_limit == 4 %}selected{% endif %}>4</option>
+                        <option value="5" {% if parameter.search_limit == 5 %}selected{% endif %}>5</option>
+                        <option value="6" {% if parameter.search_limit == 6 %}selected{% endif %}>6</option>
+                        <option value="7" {% if parameter.search_limit == 7 %}selected{% endif %}>7</option>
+                        <option value="8" {% if parameter.search_limit == 8 %}selected{% endif %}>8</option>
+                    </select>
+                    <p class="form-note">Количество результатов поиска для обработки LLM</p>
+                </div>
+
+                <div class="form-group half-width">
+                    <div class="checkbox-item">
+                        <input type="checkbox" id="use_reranker" name="use_reranker" value="true" {% if parameter.use_reranker %}checked{% endif %}>
+                        <label for="use_reranker">Использовать ререйтинг</label>
+                    </div>
+                    <p class="form-note">Ререйтинг улучшает качество результатов, но требует больше ресурсов</p>
+                </div>
+            </div>
+
+            <div class="form-group rerank-limit-container" style="display: {% if parameter.use_reranker %}block{% else %}none{% endif %};">
+                <label for="rerank_limit">Количество документов для ререйтинга</label>
+                <select id="rerank_limit" name="rerank_limit">
+                    <option value="5" {% if parameter.rerank_limit == 5 %}selected{% endif %}>5</option>
+                    <option value="10" {% if parameter.rerank_limit == 10 %}selected{% endif %}>10</option>
+                    <option value="15" {% if parameter.rerank_limit == 15 %}selected{% endif %}>15</option>
+                    <option value="20" {% if parameter.rerank_limit == 20 %}selected{% endif %}>20</option>
+                    <option value="30" {% if parameter.rerank_limit == 30 %}selected{% endif %}>30</option>
+                    <option value="9999" {% if parameter.rerank_limit == 9999 %}selected{% endif %}>Все чанки в заявке</option>
+                </select>
+                <p class="form-note">Количество документов, извлекаемых для применения ререйтинга</p>
+            </div>
+
+            <!-- НОВАЯ ОПЦИЯ: Полное сканирование -->
+            <div class="form-group">
+                <div class="checkbox-item">
+                    <input type="checkbox" id="use_full_scan" name="use_full_scan" value="true" {% if parameter.use_full_scan %}checked{% endif %}>
+                    <label for="use_full_scan">Использовать полное сканирование при неудаче</label>
+                </div>
+                <p class="form-note">
+                    Если информация не найдена при обычном поиске, система проверит ВСЕ чанки заявки по одному.
+                    <span class="warning-text">Внимание: может значительно увеличить время анализа!</span>
+                </p>
+                <div class="alert alert-warning" id="full-scan-warning" style="display: {% if parameter.use_full_scan %}block{% else %}none{% endif %};">
+                    <strong>Предупреждение:</strong> Полное сканирование может занять значительное время при большом количестве чанков.
+                    Используйте эту опцию только для критически важных параметров.
+                </div>
+            </div>
+
+            <h3>Настройки LLM</h3>
+
+            <div class="form-group">
+                <label for="llm_model">Модель LLM</label>
+                <select id="llm_model" name="llm_model" required>
+                    {% for model in available_models %}
+                        <option value="{{ model }}" {% if model == parameter.llm_model %}selected{% endif %}>{{ model }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="llm_prompt_template">Промпт к LLM</label>
+                <textarea id="llm_prompt_template" name="llm_prompt_template" rows="10" required>{{ parameter.llm_prompt_template }}</textarea>
+                <p class="form-note">Используйте {query} для вставки поискового запроса и {context} для вставки контекста из найденных документов</p>
+                <div class="alert alert-info" id="query-usage-note" style="display: {% if parameter.llm_query %}block{% else %}none{% endif %};">
+                    <strong>Внимание:</strong> При использовании отдельного запроса для LLM, {query} в промпте будет заменен на значение из поля "Запрос для LLM"
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group half-width">
+                    <label for="llm_temperature">Temperature</label>
+                    <input type="number" id="llm_temperature" name="llm_temperature" step="0.1" min="0" max="1" value="{{ parameter.llm_temperature }}">
+                    <p class="form-note">Значение от 0.0 до 1.0, влияет на креативность ответов</p>
+                </div>
+
+                <div class="form-group half-width">
+                    <label for="llm_max_tokens">Max Tokens</label>
+                    <input type="number" id="llm_max_tokens" name="llm_max_tokens" min="100" max="4000" value="{{ parameter.llm_max_tokens }}">
+                    <p class="form-note">Максимальная длина ответа в токенах</p>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="button">Сохранить изменения</button>
+                <a href="{{ url_for('checklists.view', id=checklist.id) }}" class="button button-secondary">Отмена</a>
+            </div>
+        </form>
+    </div>
+
+    <style>
+        .alert {
+            padding: 15px;
+            margin: 10px 0;
+            border: 1px solid transparent;
+            border-radius: 4px;
+        }
+
+        .alert-info {
+            color: #0c5460;
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+        }
+
+        .alert-warning {
+            color: #856404;
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+        }
+
+        .warning-text {
+            color: #d9534f;
+            font-weight: bold;
+        }
+
+        #llm-query-settings {
+            background-color: #f8f9fa;
+            border-left: 4px solid #17a2b8;
+            padding: 15px;
+            margin-top: 10px;
+            border-radius: 4px;
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Элементы для управления отображением дополнительных настроек ререйтинга
+            const useRerankerCheckbox = document.getElementById('use_reranker');
+            const rerankLimitContainer = document.querySelector('.rerank-limit-container');
+
+            // Функция для обновления видимости настроек ререйтинга
+            function updateRerankSettings() {
+                if (useRerankerCheckbox.checked) {
+                    rerankLimitContainer.style.display = 'block';
+                } else {
+                    rerankLimitContainer.style.display = 'none';
+                }
+            }
+
+            // Инициализация и установка обработчика событий
+            updateRerankSettings();
+            useRerankerCheckbox.addEventListener('change', updateRerankSettings);
+
+            // Новая логика для отдельного LLM запроса
+            const useSeparateLlmQueryCheckbox = document.getElementById('use_separate_llm_query');
+            const llmQuerySettings = document.getElementById('llm-query-settings');
+            const llmQueryInput = document.getElementById('llm_query');
+            const queryUsageNote = document.getElementById('query-usage-note');
+
+            function updateLlmQueryVisibility() {
+                if (useSeparateLlmQueryCheckbox.checked) {
+                    llmQuerySettings.style.display = 'block';
+                    queryUsageNote.style.display = 'block';
+                } else {
+                    llmQuerySettings.style.display = 'none';
+                    llmQueryInput.value = '';
+                    queryUsageNote.style.display = 'none';
+                }
+            }
+
+            // Не вызываем updateLlmQueryVisibility() при загрузке, так как начальное состояние уже установлено в HTML
+            useSeparateLlmQueryCheckbox.addEventListener('change', updateLlmQueryVisibility);
+
+            // Новая логика для полного сканирования
+            const useFullScanCheckbox = document.getElementById('use_full_scan');
+            const fullScanWarning = document.getElementById('full-scan-warning');
+
+            useFullScanCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    fullScanWarning.style.display = 'block';
+                } else {
+                    fullScanWarning.style.display = 'none';
+                }
+            });
+        });
+    </script>
+{% endblock %}

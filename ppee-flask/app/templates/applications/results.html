@@ -1,0 +1,868 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="page-header">
+        <h1>
+            {% if partial_results %}
+                Частичные результаты анализа ({{ application.analysis_completed_params }}/{{ application.analysis_total_params }})
+            {% else %}
+                Результаты анализа
+            {% endif %}
+        </h1>
+        <a href="{{ url_for('applications.view', id=application.id) }}" class="button button-secondary">Назад к заявке</a>
+    </div>
+
+    <div class="results-container">
+        <h2>{{ application.name }}</h2>
+
+        <div class="results-summary">
+            <p>Статус: <span class="status-badge status-{{ application.status }}">{{ application.get_status_display() }}</span></p>
+            <p>Проанализировано чек-листов: {{ checklist_results|length }}</p>
+            {% if partial_results %}
+                <p class="partial-results-note">
+                    <strong>Внимание:</strong> Это частичные результаты. Анализ продолжается...
+                    <br>Обработано параметров: {{ application.analysis_completed_params }} из {{ application.analysis_total_params }}
+                </p>
+
+                <!-- Добавляем автообновление для частичных результатов -->
+                <script>
+                    // Автоматически обновляем страницу каждые 30 секунд
+                    setTimeout(function() {
+                        window.location.reload();
+                    }, 30000);
+                </script>
+            {% endif %}
+        </div>
+
+
+
+        <div class="view-options">
+            <button class="button toggle-all-prompts" onclick="toggleAllPrompts()">Показать все запросы</button>
+            <label class="display-mode-toggle">
+                <input type="checkbox" id="displayModeToggle" onchange="toggleDisplayMode()" checked>
+                <span class="toggle-label">Режим точного отображения</span>
+            </label>
+        </div>
+
+        {% for checklist_id, data in checklist_results.items() %}
+            <div class="checklist-results">
+                <h3>{{ data.checklist.name }}</h3>
+
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Параметр</th>
+                            <th>Значение</th>
+                            <th class="sources-column">Источники</th>
+                            <th>LLM</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {# Сортируем результаты по order_index параметров #}
+                        {% set sorted_results = data.results|sort(attribute='parameter.order_index') %}
+                        {% for item in sorted_results %}
+                            {# Проверяем, содержит ли значение "информация не найдена" #}
+                            {% set is_not_found = item.result.value and 'информация не найдена' in item.result.value.lower() %}
+
+                            <tr class="{% if is_not_found %}not-found-row{% endif %}">
+                                <td>{{ item.parameter.name }}</td>
+                                <td>
+                                    {% if is_not_found %}
+                                        <span class="not-found-value">
+                                            <svg class="not-found-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                                                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z"/>
+                                                <path d="M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z"/>
+                                            </svg>
+                                            {{ item.result.value }}
+                                        </span>
+                                    {% else %}
+                                        {{ item.result.value }}
+                                    {% endif %}
+                                </td>
+                                <td class="sources-column">
+                                    {% if item.result.search_results %}
+                                        {# Проверяем, это результат полного сканирования? #}
+                                        {% set is_full_scan = item.result.llm_request and item.result.llm_request.full_scan %}
+                                        {% if is_full_scan %}
+                                            {% if item.result.llm_request.full_scan_result == 'not_found' %}
+                                                <div class="source-file full-scan-source">
+                                                    <strong>Полное сканирование:</strong><br>
+                                                    <span class="not-found">Информация не найдена после проверки {{ item.result.llm_request.chunks_scanned }} чанков</span>
+                                                </div>
+                                            {% else %}
+                                                {# Группируем чанки по файлам и страницам для полного сканирования #}
+                                                {% set files_data = {} %}
+                                                {% for doc in item.result.search_results %}
+                                                    {% if doc.metadata %}
+                                                        {% set doc_id = doc.metadata.document_id or doc.metadata.document_name %}
+                                                        {% if doc_id %}
+                                                            {% set doc_name = doc_names_mapping.get(doc_id, doc_id) %}
+                                                            {% set page_num = doc.metadata.page_number %}
+
+                                                            {% if doc_name not in files_data %}
+                                                                {% set _ = files_data.update({doc_name: []}) %}
+                                                            {% endif %}
+
+                                                            {% if page_num and page_num not in files_data[doc_name] %}
+                                                                {% set _ = files_data[doc_name].append(page_num) %}
+                                                            {% endif %}
+                                                        {% endif %}
+                                                    {% endif %}
+                                                {% endfor %}
+
+                                                <div class="source-file full-scan-source">
+                                                    <strong>Полное сканирование:</strong><br>
+                                                    {% for file_name, pages in files_data.items() %}
+                                                        <strong>{{ file_name }}</strong><br>
+                                                        {% if pages %}
+                                                            Страницы: {{ pages|format_page_ranges }}
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                </div>
+                                            {% endif %}
+                                        {% else %}
+                                            {# Обычный вывод источников для векторного/гибридного поиска #}
+                                            <div class="sources-info">
+                                                {% set unique_sources = {} %}
+                                                {% for source in item.result.search_results %}
+                                                    {% if source.metadata %}
+                                                        {# Пробуем получить document_id или document_name #}
+                                                        {% set doc_id = source.metadata.document_id or source.metadata.document_name %}
+                                                        {% if doc_id %}
+                                                            {# Получаем читаемое имя через маппинг #}
+                                                            {% set doc_name = doc_names_mapping.get(doc_id, doc_id) %}
+                                                            {% if doc_name not in unique_sources %}
+                                                                {% set _ = unique_sources.update({doc_name: []}) %}
+                                                            {% endif %}
+                                                            {% if source.metadata.page_number %}
+                                                                {% set _ = unique_sources[doc_name].append(source.metadata.page_number) %}
+                                                            {% endif %}
+                                                        {% endif %}
+                                                    {% endif %}
+                                                {% endfor %}
+
+                                                {% for doc_name, pages in unique_sources.items() %}
+                                                    <div class="source-file">
+                                                        <strong>{{ doc_name }}</strong>
+                                                        {% if pages %}
+                                                            <br>Страницы: {{ pages|format_page_ranges }}
+                                                        {% endif %}
+                                                    </div>
+                                                {% endfor %}
+                                            </div>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="no-sources">-</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.result.llm_request %}
+                                        <div style="font-size: 0.9em; margin-bottom: 5px;">
+                                            <div>{{ item.result.llm_request.model or item.parameter.llm_model }}</div>
+                                            {% if item.result.llm_request.tokens %}
+                                                <div style="color: #666;">Промпт: {{ item.result.llm_request.tokens.prompt_tokens|default(0) }}</div>
+                                            {% endif %}
+                                            {% if item.result.search_results %}
+                                                {% set total_chars = item.result.search_results|calculate_chunks_size %}
+                                                {% set total_tokens = item.result.search_results|calculate_chunks_tokens %}
+                                                <div style="color: #666;">Чанки: ~{{ total_tokens }}</div>
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                    <button class="toggle-prompt-btn" onclick="togglePrompt('prompt-{{ item.result.id }}')">Показать запрос</button>
+                                </td>                            </tr>
+                            <tr class="prompt-row" id="prompt-{{ item.result.id }}" style="display: none;">
+                                <td colspan="4" class="prompt-container">
+                                    {% if item.result.llm_request %}
+                                        {# Проверяем тип анализа #}
+                                        {% if item.result.llm_request.full_scan %}
+                                            <div class="full-scan-info">
+                                                <h4 class="full-scan-header">
+                                                    <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle;">
+                                                        <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+                                                    </svg>
+                                                    Результат полного сканирования документа
+                                                </h4>
+                                                <div class="scan-stats">
+                                                    <p><strong>Всего проверено чанков:</strong> {{ item.result.llm_request.chunks_scanned }}</p>
+                                                    {% if item.result.llm_request.batch_size %}
+                                                        <p><strong>Размер найденной группы:</strong> {{ item.result.llm_request.batch_size }} чанков</p>
+                                                    {% endif %}
+                                                    {% if item.result.llm_request.full_scan_result == 'not_found' %}
+                                                        <p class="scan-not-found"><strong>Результат:</strong> Информация не найдена во всех чанках</p>
+                                                    {% else %}
+                                                        <p class="scan-found"><strong>Результат:</strong> Информация найдена!</p>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        {% endif %}
+
+                                        {% if item.result.llm_request.prompt %}
+                                            <h4>Использованный промпт:</h4>
+                                            <div class="text-scroll-container">
+                                                <div class="llm-prompt text-container">
+                                                    {{ item.result.llm_request.prompt }}
+                                                </div>
+                                            </div>
+                                        {% else %}
+                                            <div class="alert alert-warning">
+                                                <p><strong>Внимание:</strong> Полный промпт не был сохранен для этого результата.</p>
+                                                <p>Шаблон промпта: {{ item.parameter.llm_prompt_template[:100] }}...</p>
+                                            </div>
+                                        {% endif %}
+
+                                        <h4>Параметры запроса:</h4>
+                                        <ul>
+                                            <li>Модель: {{ item.result.llm_request.model or item.parameter.llm_model }}</li>
+                                            <li>Temperature: {{ item.result.llm_request.temperature or item.parameter.llm_temperature }}</li>
+                                            <li>Max tokens: {{ item.result.llm_request.max_tokens or item.parameter.llm_max_tokens }}</li>
+                                            {% if item.result.llm_request.context_length %}
+                                            <li>Context length: {{ item.result.llm_request.context_length }}</li>
+                                            {% endif %}
+
+                                            <!-- Информация о токенах -->
+                                            {% if item.result.llm_request.tokens %}
+                                                <li class="token-info">
+                                                    <strong>Использовано токенов:</strong>
+                                                    {{ item.result.llm_request.tokens.total_tokens|default(0) }}
+                                                    <span class="token-details">
+                                                        (запрос: {{ item.result.llm_request.tokens.prompt_tokens|default(0) }},
+                                                         ответ: {{ item.result.llm_request.tokens.completion_tokens|default(0) }})
+                                                    </span>
+                                                </li>
+                                            {% elif item.result.llm_request.total_tokens %}
+                                                <!-- Обратная совместимость -->
+                                                <li class="token-info">
+                                                    <strong>Использовано токенов:</strong>
+                                                    {{ item.result.llm_request.total_tokens }}
+                                                    <span class="token-details">
+                                                        (запрос: {{ item.result.llm_request.prompt_tokens|default(0) }},
+                                                         ответ: {{ item.result.llm_request.completion_tokens|default(0) }})
+                                                    </span>
+                                                </li>
+                                            {% endif %}
+
+                                            {% if item.parameter.use_full_scan %}
+                                            <li><strong>Полное сканирование:</strong> Включено</li>
+                                            {% endif %}
+                                        </ul>
+
+                                        {% if item.result.llm_request.response %}
+                                            <h4>Ответ модели:</h4>
+                                            <div class="text-scroll-container">
+                                                <div class="llm-response text-container">
+                                                    {{ item.result.llm_request.response }}
+                                                </div>
+                                            </div>
+                                        {% endif %}
+
+                                        {# Информация о методе поиска #}
+                                        {% if item.result.llm_request.search_method %}
+                                            <h4>Метод поиска:</h4>
+                                            <p>
+                                                {% if item.result.llm_request.search_method == 'hybrid' %}
+                                                    Гибридный поиск (векторный + текстовый)
+                                                {% elif item.result.llm_request.search_method == 'text' %}
+                                                    Текстовый поиск
+                                                {% else %}
+                                                    Векторный поиск
+                                                {% endif %}
+                                            </p>
+                                        {% endif %}
+
+                                        <h4>Результаты поиска (контекст):</h4>
+
+                                        {# Отображение результатов поиска #}
+                                        {% if item.result.search_results %}
+                                            <h4>Найденные фрагменты ({{ item.result.search_results|length }}):</h4>
+                                            {% for doc in item.result.search_results %}
+                                            <div class="search-result">
+                                                <p><strong>Результат {{ loop.index }}:</strong></p>
+                                                {% if doc.metadata %}
+                                                    {# Пробуем получить document_id или document_name #}
+                                                    {% set doc_id = doc.metadata.document_id or doc.metadata.document_name %}
+                                                    {% set doc_name = doc_names_mapping.get(doc_id, doc_id) if doc_names_mapping and doc_id else 'Не указан' %}
+                                                    <p><strong>Файл:</strong> {{ doc_name }}</p>
+                                                    <p><strong>Страница:</strong> {{ doc.metadata.page_number or 'Не указана' }}</p>
+                                                    {% if doc.search_type %}
+                                                    <p><strong>Тип поиска:</strong>
+                                                        {% if doc.search_type == 'hybrid' %}
+                                                            <span class="search-type-hybrid">Гибридный поиск</span>
+                                                        {% elif doc.search_type == 'text' %}
+                                                            <span class="search-type-text">Текстовый поиск</span>
+                                                        {% elif doc.search_type == 'vector' %}
+                                                            <span class="search-type-vector">Векторный поиск</span>
+                                                        {% elif doc.search_type == 'full_scan' %}
+                                                            <span class="search-type-full-scan">Полное сканирование</span>
+                                                        {% else %}
+                                                            {{ doc.search_type }}
+                                                        {% endif %}
+                                                    </p>
+                                                    {% endif %}
+                                                    {% if doc.score %}
+                                                    <p><strong>Релевантность:</strong> {{ "%.4f"|format(doc.score) }}</p>
+                                                    {% endif %}
+                                                    {% if doc.rerank_score %}
+                                                    <p><strong>Релевантность (ререйтинг):</strong> {{ "%.4f"|format(doc.rerank_score) }}</p>
+                                                    {% endif %}
+                                                {% else %}
+                                                    <p><strong>Файл:</strong> Не указан</p>
+                                                    <p><strong>Страница:</strong> Не указана</p>
+                                                {% endif %}
+                                                <div class="text-scroll-container">
+                                                    <div class="search-result-content text-container">
+                                                        {{ doc.text }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        {% endif %}
+                                    {% elif item.result.search_results %}
+                                        {# Старый формат - промпт не сохранялся #}
+                                        <div class="alert alert-info">
+                                            <p><strong>Информация:</strong> Для данного результата сохранен старый формат данных без полного промпта.</p>
+                                        </div>
+
+                                        <h4>Параметры запроса:</h4>
+                                        <ul>
+                                            <li>Модель: {{ item.parameter.llm_model }}</li>
+                                            <li>Temperature: {{ item.parameter.llm_temperature }}</li>
+                                            <li>Max tokens: {{ item.parameter.llm_max_tokens }}</li>
+                                        </ul>
+
+                                        <h4>Результаты поиска (контекст):</h4>
+                                        {% for doc in item.result.search_results %}
+                                            <div class="search-result">
+                                                <p><strong>Результат {{ loop.index }}:</strong></p>
+                                                {% if doc.metadata %}
+                                                    {# Пробуем получить document_id или document_name #}
+                                                    {% set doc_id = doc.metadata.document_id or doc.metadata.document_name %}
+                                                    {% set doc_name = doc_names_mapping.get(doc_id, doc_id) if doc_names_mapping and doc_id else 'Не указан' %}
+                                                    <p><strong>Файл:</strong> {{ doc_name }}</p>
+                                                    <p><strong>Страница:</strong> {{ doc.metadata.page_number or 'Не указана' }}</p>
+                                                    {% if doc.search_type %}
+                                                    <p><strong>Тип поиска:</strong>
+                                                        {% if doc.search_type == 'hybrid' %}
+                                                            <span class="search-type-hybrid">Гибридный поиск</span>
+                                                        {% elif doc.search_type == 'text' %}
+                                                            <span class="search-type-text">Текстовый поиск</span>
+                                                        {% elif doc.search_type == 'vector' %}
+                                                            <span class="search-type-vector">Векторный поиск</span>
+                                                        {% elif doc.search_type == 'full_scan' %}
+                                                            <span class="search-type-full-scan">Полное сканирование</span>
+                                                        {% else %}
+                                                            {{ doc.search_type }}
+                                                        {% endif %}
+                                                    </p>
+                                                    {% endif %}
+                                                    {% if doc.score %}
+                                                    <p><strong>Релевантность:</strong> {{ "%.4f"|format(doc.score) }}</p>
+                                                    {% endif %}
+                                                    {% if doc.rerank_score %}
+                                                    <p><strong>Релевантность (ререйтинг):</strong> {{ "%.4f"|format(doc.rerank_score) }}</p>
+                                                    {% endif %}
+                                                {% endif %}
+                                                <div class="text-scroll-container">
+                                                    <div class="search-result-content text-container">
+                                                        {{ doc.text }}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    {% else %}
+                                        <p>Информация о запросе недоступна</p>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endfor %}
+
+        <div class="results-actions">
+            <button class="button" onclick="window.location.href='{{ url_for('applications.results_pdf', id=application.id) }}'">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; margin-right: 5px;">
+                    <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/>
+                    <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/>
+                </svg>
+                Сохранить отчет (PDF)
+            </button>
+
+            <button class="button" onclick="window.print()">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; margin-right: 5px;">
+                    <path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/>
+                    <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 2v1H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1h-1v-1a2 2 0 0 0-2-2H5zm7 2v3a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1z"/>
+                </svg>
+                Печать
+            </button>
+        </div>
+    </div>
+
+    <!-- Нижняя навигация вне контейнера результатов -->
+    <div class="page-footer">
+        <a href="{{ url_for('applications.view', id=application.id) }}" class="button button-secondary">Назад к заявке</a>
+    </div>
+
+    <style>
+        /* Исправление горизонтальной прокрутки на всей странице */
+        html, body {
+            overflow-x: hidden;
+            max-width: 100%;
+        }
+
+        .results-container {
+            max-width: 100%;
+            overflow-x: hidden;
+        }
+
+        .data-table {
+            width: 100%;
+            table-layout: fixed;
+        }
+
+        .data-table th:nth-child(1) { width: 25%; }
+        .data-table th:nth-child(2) { width: 35%; }
+        .data-table th:nth-child(3) { width: 25%; }
+        .data-table th:nth-child(4) { width: 15%; }
+
+        /* СТИЛИ ДЛЯ NOT FOUND */
+        .not-found-row {
+            background-color: rgba(255, 243, 205, 0.2);
+        }
+
+        .not-found-row:hover {
+            background-color: rgba(255, 243, 205, 0.4);
+        }
+
+        .not-found-value {
+            color: #d9534f;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .not-found-icon {
+            flex-shrink: 0;
+        }
+
+        /* СТИЛИ ДЛЯ ИСТОЧНИКОВ */
+        /* Настройка размера шрифта для колонки источники */
+        .sources-column {
+            font-size: 0.9rem !important; /* Уменьшенный размер шрифта */
+            line-height: 1.4; /* Межстрочный интервал для лучшей читаемости */
+        }
+
+        /* Настройка всех элементов внутри колонки источников */
+        .sources-column * {
+            font-size: inherit !important; /* Наследуем размер шрифта от родителя */
+        }
+
+        /* Убедимся, что strong работает в колонке источников */
+        .sources-column strong {
+            font-weight: bold !important;
+        }
+
+        /* Стили для информации об источниках */
+        .sources-info {
+            font-size: inherit; /* Наследуем размер от родителя */
+        }
+
+        .source-file {
+            margin-bottom: 8px;
+            padding: 5px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            border-left: 3px solid #007bff;
+            font-size: inherit; /* Наследуем размер от родителя */
+        }
+
+        .source-file:last-child {
+            margin-bottom: 0;
+        }
+
+        .source-file strong {
+            font-size: inherit; /* Убедимся что жирный текст того же размера */
+        }
+
+        .no-sources {
+            color: #6c757d;
+            font-style: italic;
+            font-size: inherit; /* Наследуем размер от родителя */
+        }
+
+        /* Стили для полного сканирования */
+        .full-scan-source {
+            background-color: #f8f5ff;
+            padding: 5px;
+            border-radius: 4px;
+            border-left: 3px solid #6f42c1 !important;
+            font-size: inherit; /* Наследуем размер от родителя */
+        }
+
+        .full-scan-source strong {
+            font-weight: bold !important;
+        }
+
+        /* Стили для информации о токенах в модальном окне */
+        .token-info {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .token-details {
+            font-size: 0.9em;
+            color: #666;
+            margin-left: 5px;
+        }
+
+        /* СТИЛИ ДЛЯ СКАНА */
+        .full-scan-info {
+            background-color: #f8f5ff;
+            border: 1px solid #d4c5f9;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .full-scan-header {
+            color: #6f42c1;
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+
+        .scan-stats p {
+            margin: 5px 0;
+        }
+
+        .scan-not-found {
+            color: #d9534f;
+        }
+
+        .scan-found {
+            color: #5cb85c;
+        }
+
+        .search-type-full-scan {
+            background-color: #6f42c1;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+
+        .search-type-hybrid {
+            background-color: #17a2b8;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+
+        .search-type-text {
+            background-color: #ffc107;
+            color: #212529;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+
+        .search-type-vector {
+            background-color: #28a745;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 0.85em;
+        }
+
+        /* Контейнер для промпта */
+        .prompt-container {
+            padding: 20px;
+            background-color: #f5f5f5;
+            max-width: 100%;
+            overflow: hidden;
+        }
+
+        .prompt-row {
+            background-color: #f5f5f5;
+        }
+
+        .prompt-row td {
+            max-width: 100%;
+            overflow: hidden;
+        }
+
+        .alert {
+            padding: 10px 15px;
+            margin-bottom: 15px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+        }
+
+        .alert-info {
+            color: #31708f;
+            background-color: #d9edf7;
+            border-color: #bce8f1;
+        }
+
+        .alert-warning {
+            color: #8a6d3b;
+            background-color: #fcf8e3;
+            border-color: #faebcc;
+        }
+
+        /* Контейнер для прокрутки */
+        .text-scroll-container {
+            width: 100%;
+            max-width: 100%;
+            overflow-x: auto; /* Горизонтальная прокрутка */
+            overflow-y: auto; /* Вертикальная прокрутка */
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            max-height: 400px;
+            position: relative; /* Для правильного позиционирования */
+        }
+
+        .text-container {
+            padding: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            box-sizing: border-box;
+            min-width: 100%;
+            width: 100%;
+        }
+
+        /* Исправленный режим точного отображения */
+        .exact-mode {
+            white-space: pre !important;
+            word-wrap: normal !important;
+            width: max-content !important;
+            min-width: 100% !important;
+        }
+
+        .llm-prompt {
+            background-color: #fff;
+        }
+
+        .llm-response {
+            background-color: #f0f8ff;
+            border-color: #add8e6;
+        }
+
+        .search-result {
+            margin-bottom: 15px;
+            padding: 10px;
+            background-color: #fff;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+        }
+
+        .search-result-content {
+            background-color: #f5f5f5;
+        }
+
+        .toggle-prompt-btn {
+            padding: 5px 10px;
+            background-color: #f0f0f0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .view-options {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap; /* Позволяет переносить элементы на новую строку */
+        }
+
+        /* Исправление стилей для чекбокса */
+        .display-mode-toggle {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+            background-color: #f0f0f0;
+            padding: 5px 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            min-width: 200px; /* Задаем минимальную ширину */
+            white-space: nowrap; /* Запрещаем перенос текста */
+        }
+
+        .display-mode-toggle input {
+            margin-right: 5px;
+        }
+
+        .toggle-label {
+            white-space: nowrap; /* Запрещаем перенос текста */
+            display: inline-block; /* Чтобы действовал white-space */
+        }
+
+        .partial-results-note {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        .partial-results-note strong {
+            color: #664d03;
+        }
+
+        /* Обновленные стили для действий с результатами */
+        .results-actions {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #dee2e6;
+            text-align: center;
+        }
+
+        .results-actions .button {
+            margin: 0 5px;
+        }
+
+        /* Стили для нижней навигации */
+        .page-footer {
+            margin-top: 20px;
+            margin-bottom: 30px;
+            text-align: right;
+            padding-right: 20px;
+        }
+
+        .page-footer .button {
+            margin: 0;
+        }
+
+        /* Адаптивность для мобильных устройств */
+        @media (max-width: 768px) {
+            .data-table {
+                font-size: 0.9em;
+            }
+
+            .data-table th,
+            .data-table td {
+                padding: 8px;
+            }
+        }
+    </style>
+
+    <script>
+        // Функция переключения режима отображения
+        function toggleDisplayMode() {
+            const isExactMode = document.getElementById('displayModeToggle').checked;
+            const textContainers = document.querySelectorAll('.text-container');
+
+            textContainers.forEach(container => {
+                if (isExactMode) {
+                    container.classList.add('exact-mode');
+                } else {
+                    container.classList.remove('exact-mode');
+                }
+            });
+        }
+
+        function togglePrompt(id) {
+            const row = document.getElementById(id);
+            const button = event.target;
+
+            if (row.style.display === "none") {
+                row.style.display = "table-row";
+                button.textContent = "Скрыть запрос";
+
+                // Применяем режим точного отображения к новым элементам
+                const isExactMode = document.getElementById('displayModeToggle').checked;
+                if (isExactMode) {
+                    const textContainers = row.querySelectorAll('.text-container');
+                    textContainers.forEach(container => {
+                        container.classList.add('exact-mode');
+                    });
+                }
+            } else {
+                row.style.display = "none";
+                button.textContent = "Показать запрос";
+            }
+        }
+
+        // Функция для отображения/скрытия всех запросов
+        function toggleAllPrompts() {
+            const allPromptRows = document.querySelectorAll('.prompt-row');
+            const allButtons = document.querySelectorAll('.toggle-prompt-btn');
+            const toggleAllButton = document.querySelector('.toggle-all-prompts');
+
+            // Определяем текущее состояние (показаны ли запросы)
+            let areHidden = true;
+            for (const row of allPromptRows) {
+                if (row.style.display !== "none") {
+                    areHidden = false;
+                    break;
+                }
+            }
+
+            // Инвертируем текущее состояние
+            const shouldShow = areHidden;
+
+            // Применяем состояние
+            for (const row of allPromptRows) {
+                row.style.display = shouldShow ? "table-row" : "none";
+
+                // Применяем режим точного отображения к новым элементам
+                if (shouldShow) {
+                    const isExactMode = document.getElementById('displayModeToggle').checked;
+                    if (isExactMode) {
+                        const textContainers = row.querySelectorAll('.text-container');
+                        textContainers.forEach(container => {
+                            container.classList.add('exact-mode');
+                        });
+                    }
+                }
+            }
+
+            for (const button of allButtons) {
+                button.textContent = shouldShow ? "Скрыть запрос" : "Показать запрос";
+            }
+
+            toggleAllButton.textContent = shouldShow ? "Скрыть все запросы" : "Показать все запросы";
+        }
+
+        // Активируем режим точного отображения при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            toggleDisplayMode();
+
+            // Добавляем обработчик кликов для строк таблицы
+            const dataRows = document.querySelectorAll('.data-table tbody tr');
+
+            dataRows.forEach((row, index) => {
+                // Пропускаем строки с классом prompt-row
+                if (row.classList.contains('prompt-row')) {
+                    return;
+                }
+
+                // Добавляем обработчик клика на строку
+                row.addEventListener('click', function(e) {
+                    // Проверяем, что клик был не по кнопке
+                    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) {
+                        return;
+                    }
+
+                    // Находим кнопку в этой строке
+                    const button = this.querySelector('.toggle-prompt-btn');
+                    if (button) {
+                        // Симулируем клик по кнопке
+                        button.click();
+                    }
+                });
+
+                // Меняем курсор при наведении
+                row.style.cursor = 'pointer';
+            });
+        });
+    </script>
+{% endblock %}
