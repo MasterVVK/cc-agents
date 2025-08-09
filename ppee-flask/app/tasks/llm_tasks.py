@@ -8,7 +8,6 @@ import re
 from celery.exceptions import Terminated, WorkerLostError
 
 logger = logging.getLogger(__name__)
-FASTAPI_URL = "http://localhost:8001"
 
 
 def save_single_result(application_id, parameter_id, result_data):
@@ -47,7 +46,7 @@ def save_single_result(application_id, parameter_id, result_data):
         return False
 
 
-def get_all_chunks_for_application(application_id, batch_size=100):
+def get_all_chunks_for_application(application_id, fastapi_url, batch_size=100):
     """Получает все чанки для заявки партиями"""
     try:
         offset = 0
@@ -55,7 +54,7 @@ def get_all_chunks_for_application(application_id, batch_size=100):
 
         while True:
             response = requests.get(
-                f"{FASTAPI_URL}/applications/{application_id}/chunks",
+                f"{fastapi_url}/applications/{application_id}/chunks",
                 params={"limit": batch_size, "offset": offset}
             )
 
@@ -92,7 +91,7 @@ def get_all_chunks_for_application(application_id, batch_size=100):
         return []
 
 
-def process_chunks_batch_through_llm(chunks_batch, param_data, model_name):
+def process_chunks_batch_through_llm(chunks_batch, param_data, model_name, fastapi_url):
     """Обрабатывает пакет чанков через LLM"""
     try:
         # Форматируем контекст из пакета чанков
@@ -110,7 +109,7 @@ def process_chunks_batch_through_llm(chunks_batch, param_data, model_name):
         )
 
         # Отправляем запрос к LLM
-        llm_response = requests.post(f"{FASTAPI_URL}/llm/process", json={
+        llm_response = requests.post(f"{fastapi_url}/llm/process", json={
             "model_name": model_name,
             "prompt": prompt,
             "context": "",  # Контекст уже включен в промпт
@@ -305,6 +304,9 @@ def process_parameters_task(self, application_id):
     app = create_app()
 
     with app.app_context():
+        # Получаем URL FastAPI из конфигурации
+        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8001')
+        
         # Используем свежий запрос к БД для избежания проблем с кешированием
         application = db.session.query(Application).filter_by(id=application_id).first()
 
@@ -365,7 +367,7 @@ def process_parameters_task(self, application_id):
 
                 # Выполняем поиск используя search_query
                 try:
-                    search_response = requests.post(f"{FASTAPI_URL}/search", json={
+                    search_response = requests.post(f"{fastapi_url}/search", json={
                         "application_id": str(application_id),
                         "query": param.search_query,  # Всегда используем search_query для поиска
                         "limit": param.search_limit,
@@ -461,7 +463,7 @@ def process_parameters_task(self, application_id):
                 for param_id, data in param_group:
                     try:
                         # Отправляем запрос к LLM
-                        llm_response = requests.post(f"{FASTAPI_URL}/llm/process", json={
+                        llm_response = requests.post(f"{fastapi_url}/llm/process", json={
                             "model_name": model_name,
                             "prompt": data['prompt'],
                             "context": "",  # Контекст уже включен в промпт
@@ -558,7 +560,7 @@ def process_parameters_task(self, application_id):
                 )
 
                 # Получаем все чанки заявки
-                all_chunks = get_all_chunks_for_application(application_id)
+                all_chunks = get_all_chunks_for_application(application_id, fastapi_url)
                 total_chunks = len(all_chunks)
                 logger.info(f"Получено {total_chunks} чанков для полного сканирования")
 
@@ -617,7 +619,7 @@ def process_parameters_task(self, application_id):
                             'llm_query': data['llm_query'],
                             'temperature': data['temperature'],
                             'max_tokens': data['max_tokens']
-                        }, data['model'])
+                        }, data['model'], fastapi_url)
 
                         chunks_processed += len(chunk_batch)
 

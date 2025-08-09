@@ -6,8 +6,6 @@ from celery.exceptions import Terminated, WorkerLostError
 
 logger = logging.getLogger(__name__)
 
-FASTAPI_URL = "http://localhost:8001"
-
 
 @celery.task(bind=True)
 def semantic_search_task(self, application_id, query_text, limit=5, use_reranker=False,
@@ -19,6 +17,9 @@ def semantic_search_task(self, application_id, query_text, limit=5, use_reranker
     app = create_app()
 
     with app.app_context():
+        # Получаем URL FastAPI из конфигурации
+        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8001')
+        
         task_id = self.request.id
         start_time = time.time()
 
@@ -37,7 +38,7 @@ def semantic_search_task(self, application_id, query_text, limit=5, use_reranker
                 # Получаем статистику заявки через FastAPI
                 try:
                     logger.info(f"Получение количества чанков для заявки {application_id}")
-                    response = requests.get(f"{FASTAPI_URL}/applications/{application_id}/stats")
+                    response = requests.get(f"{fastapi_url}/applications/{application_id}/stats")
                     if response.status_code == 200:
                         stats = response.json()["stats"]
                         total_chunks = stats.get("total_points", 100)  # fallback на 100
@@ -85,7 +86,7 @@ def semantic_search_task(self, application_id, query_text, limit=5, use_reranker
             check_if_cancelled()
 
             # Вызываем FastAPI для поиска
-            response = requests.post(f"{FASTAPI_URL}/search", json={
+            response = requests.post(f"{fastapi_url}/search", json={
                 "application_id": str(application_id),
                 "query": query_text,
                 "limit": limit,
@@ -134,7 +135,7 @@ def semantic_search_task(self, application_id, query_text, limit=5, use_reranker
                 check_if_cancelled()
 
                 # Вызываем LLM через FastAPI
-                llm_response = requests.post(f"{FASTAPI_URL}/llm/process", json={
+                llm_response = requests.post(f"{fastapi_url}/llm/process", json={
                     "model_name": llm_params.get('model_name', 'gemma3:27b'),
                     "prompt": llm_params.get('prompt_template', ''),
                     "context": context,

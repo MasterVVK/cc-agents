@@ -1,5 +1,6 @@
 from app import celery, db, create_app
 from app.models import Application, File
+from flask import current_app
 import logging
 import requests
 import time
@@ -8,8 +9,6 @@ import os
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
-
-FASTAPI_URL = "http://localhost:8001"
 
 
 def update_application_status(application):
@@ -46,9 +45,14 @@ def update_application_status(application):
 
 def get_file_chunks_count(application_id, file_id):
     """Получает количество чанков для файла через FastAPI"""
+    # Получаем URL из конфигурации через контекст приложения
+    app = create_app()
+    with app.app_context():
+        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8001')
+    
     try:
         response = requests.get(
-            f"{FASTAPI_URL}/applications/{application_id}/files/{file_id}/stats"
+            f"{fastapi_url}/applications/{application_id}/files/{file_id}/stats"
         )
         if response.status_code == 200:
             return response.json().get('chunks_count', 0)
@@ -64,6 +68,9 @@ def index_document_task(self, application_id, file_id):
     app = create_app()
 
     with app.app_context():
+        # Получаем URL FastAPI из конфигурации
+        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8001')
+        
         # Получаем данные из БД
         application = Application.query.get(application_id)
         file = File.query.get(file_id)
@@ -139,7 +146,7 @@ def index_document_task(self, application_id, file_id):
             )
 
             # Отправляем запрос в FastAPI для начала индексации
-            response = requests.post(f"{FASTAPI_URL}/index", json={
+            response = requests.post(f"{fastapi_url}/index", json={
                 "task_id": task_id,
                 "application_id": str(application_id),
                 "document_path": file.file_path,
@@ -159,7 +166,7 @@ def index_document_task(self, application_id, file_id):
 
                 while attempt < max_attempts:
                     # Получаем статус задачи через FastAPI
-                    status_response = requests.get(f"{FASTAPI_URL}/tasks/{task_id}/status")
+                    status_response = requests.get(f"{fastapi_url}/tasks/{task_id}/status")
 
                     if status_response.status_code == 200:
                         status_data = status_response.json()
