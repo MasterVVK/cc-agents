@@ -546,6 +546,12 @@
     <script src="{{ url_for('static', filename='js/task-progress.js') }}"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 
+    <!-- Markdown и подсветка кода (для чата) -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+
     <!-- Скрипт для обновления системной статистики -->
     {% if current_user.is_authenticated %}
     <script>
