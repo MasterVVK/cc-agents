@@ -1,0 +1,36 @@
+# Flask и основные расширения
+Flask==2.3.3
+Flask-SQLAlchemy==3.0.5
+Flask-Migrate==4.0.5
+Flask-Login==0.6.2
+Werkzeug==2.3.7
+
+# База данных
+SQLAlchemy==2.0.21
+
+# Celery и очереди
+celery==5.3.4
+redis==5.0.0
+flower==2.0.1
+
+# Работа с PDF
+WeasyPrint==60.1
+PyPDF2==3.0.1
+pdfplumber==0.10.3
+
+# Векторная база данных
+qdrant-client==1.6.4
+
+# HTTP клиенты
+requests==2.31.0
+httpx==0.25.0
+
+# Утилиты
+python-dotenv==1.0.0
+pytz==2023.3.post1
+
+# Логирование
+colorlog==6.7.0
+
+# Для production
+gunicorn==21.2.0

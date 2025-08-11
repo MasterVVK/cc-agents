@@ -150,10 +150,21 @@ def view(id):
         if current_user.is_admin() or current_user.is_prompt_engineer():
             users = User.query.order_by(User.username).all()
 
-        return render_template('applications/view.html',
-                               title=f'Заявка {application.name}',
+        # Получаем список доступных моделей для помощника
+        available_models = []
+        try:
+            from app.services.llm_service import LLMService
+            llm_service = LLMService()
+            available_models = llm_service.get_available_models()
+        except Exception as e:
+            current_app.logger.error(f"Ошибка получения списка моделей: {e}")
+            available_models = ['gemma3:27b', 'llama2:13b', 'mistral:7b']  # Запасные варианты
+            
+        return render_template('applications/view_assistant.html',
+                               title=f'Помощник {application.name}',
                                application=application,
-                               users=users)  # Добавляем список пользователей
+                               users=users,
+                               available_models=available_models)
     except Exception as e:
         current_app.logger.error(f"Ошибка при просмотре заявки {id}: {str(e)}")
         flash(f"Ошибка при просмотре заявки: {str(e)}", "error")
@@ -1246,24 +1257,52 @@ def update_settings(id):
         return redirect(url_for('applications.view', id=application.id))
 
     try:
+        # Основные настройки
         assistant_type = request.form.get('assistant_type')
         llm_model = request.form.get('llm_model')
         temperature = request.form.get('temperature')
+        max_tokens = request.form.get('max_tokens')
         system_prompt = request.form.get('system_prompt', '').strip()
+        
+        # Настройки поиска
+        enable_search = request.form.get('enable_search') == 'on'
+        search_limit = request.form.get('search_limit')
+        use_reranker = request.form.get('use_reranker') == 'on'
+        
+        # Доступность
         is_public = request.form.get('is_public') == 'on'
 
+        # Обновляем поля
         if assistant_type:
             application.assistant_type = assistant_type
         if llm_model:
             application.llm_model = llm_model
+            
         if temperature is not None and temperature != '':
             try:
                 application.temperature = float(temperature)
             except ValueError:
                 flash('Некорректное значение температуры', 'error')
-        # Дополнительные опции могут отсутствовать в модели — игнорируем без ошибок
+                
+        if max_tokens is not None and max_tokens != '':
+            try:
+                application.max_tokens = int(max_tokens)
+            except ValueError:
+                flash('Некорректное значение максимального количества токенов', 'error')
+                
         if system_prompt is not None:
             application.system_prompt = system_prompt or None
+            
+        # Настройки поиска
+        application.enable_search = enable_search
+        
+        if search_limit is not None and search_limit != '':
+            try:
+                application.search_limit = int(search_limit)
+            except ValueError:
+                flash('Некорректное значение лимита поиска', 'error')
+                
+        application.use_reranker = use_reranker
         application.is_public = is_public
 
         db.session.commit()

@@ -60,7 +60,8 @@
                        name="tags" 
                        placeholder="например: техподдержка, база знаний, FAQ"
                        value="{{ ','.join(original_checklist.tags) if original_checklist and original_checklist.tags else '' }}">
-                <p class="form-note">Теги помогают организовать и быстро находить нужные шаблоны</p>
+                <p class="form-note">Теги помогают организовать и быстро находить нужные шаблоны.<br>
+                <strong>Совет:</strong> используйте тег <code>llm:model_name</code> для указания модели LLM (например: <code>llm:gemma3:27b</code>)</p>
             </div>
 
             <div class="form-group">
