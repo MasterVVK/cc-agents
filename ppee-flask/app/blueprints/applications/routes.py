@@ -1232,3 +1232,45 @@ def change_owner(id):
 
         flash('Ошибка при изменении владельца', 'error')
         return redirect(url_for('applications.view', id=application.id))
+
+
+@bp.route('/<int:id>/update_settings', methods=['POST'])
+@login_required
+def update_settings(id):
+    """Обновление настроек помощника (Application как Assistant)."""
+    application = Application.query.get_or_404(id)
+
+    # Проверяем права
+    if not current_user.can_edit_application(application):
+        flash('У вас нет прав для изменения настроек этого помощника', 'error')
+        return redirect(url_for('applications.view', id=application.id))
+
+    try:
+        assistant_type = request.form.get('assistant_type')
+        llm_model = request.form.get('llm_model')
+        temperature = request.form.get('temperature')
+        system_prompt = request.form.get('system_prompt', '').strip()
+        is_public = request.form.get('is_public') == 'on'
+
+        if assistant_type:
+            application.assistant_type = assistant_type
+        if llm_model:
+            application.llm_model = llm_model
+        if temperature is not None and temperature != '':
+            try:
+                application.temperature = float(temperature)
+            except ValueError:
+                flash('Некорректное значение температуры', 'error')
+        # Дополнительные опции могут отсутствовать в модели — игнорируем без ошибок
+        if system_prompt is not None:
+            application.system_prompt = system_prompt or None
+        application.is_public = is_public
+
+        db.session.commit()
+        flash('Настройки помощника обновлены', 'success')
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Ошибка при обновлении настроек помощника {id}: {str(e)}")
+        flash(f'Ошибка при сохранении настроек: {str(e)}', 'error')
+
+    return redirect(url_for('applications.view', id=application.id))

@@ -119,7 +119,7 @@ def process_chunks_batch_through_llm(chunks_batch, param_data, model_name, fasta
                 'search_query': param_data['llm_query']
             },
             "query": param_data['llm_query']
-        })
+        }, timeout=60)
 
         if llm_response.status_code == 200:
             llm_response_data = llm_response.json()
@@ -305,7 +305,7 @@ def process_parameters_task(self, application_id):
 
     with app.app_context():
         # Получаем URL FastAPI из конфигурации
-        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8001')
+        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8002')
         
         # Используем свежий запрос к БД для избежания проблем с кешированием
         application = db.session.query(Application).filter_by(id=application_id).first()

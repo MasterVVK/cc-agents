@@ -18,7 +18,7 @@ def semantic_search_task(self, application_id, query_text, limit=5, use_reranker
 
     with app.app_context():
         # Получаем URL FastAPI из конфигурации
-        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8001')
+        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8002')
         
         task_id = self.request.id
         start_time = time.time()

@@ -1,5 +1,5 @@
 <!-- app/templates/applications/_checklist_selection.html -->
-<!-- Переиспользуемый компонент для выбора чек-листов -->
+<!-- Переиспользуемый компонент для выбора шаблонов (чек-листов) -->
 
 <div class="form-group">
     <label>{{ label }} <span class="required-marker">*</span></label>
@@ -20,7 +20,7 @@
             {% endfor %}
         </div>
         <p class="form-note">{{ note }}</p>
-        <p id="checklist-error" class="error-message" style="display: none; color: red;">Пожалуйста, выберите хотя бы один чек-лист</p>
+        <p id="checklist-error" class="error-message" style="display: none; color: red;">Пожалуйста, выберите хотя бы один шаблон</p>
     {% else %}
         <p class="form-note">{{ empty_message }}</p>
     {% endif %}

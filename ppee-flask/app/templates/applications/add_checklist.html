@@ -2,15 +2,15 @@
 
 {% block content %}
     <div class="page-header">
-        <h1>Добавление чек-листа</h1>
-        <a href="{{ url_for('applications.view', id=application.id) }}" class="button button-secondary">Назад к заявке</a>
+        <h1>Добавление шаблонов промптов</h1>
+        <a href="{{ url_for('applications.view', id=application.id) }}" class="button button-secondary">Назад к помощнику</a>
     </div>
 
     <div class="form-container">
-        <h2>Заявка: {{ application.name }}</h2>
+        <h2>Помощник: {{ application.name }}</h2>
 
         <div class="info-card">
-            <h3>Текущие чек-листы</h3>
+            <h3>Текущие шаблоны</h3>
             {% if application.checklists %}
                 <ul class="current-checklists">
                     {% for checklist in application.checklists %}
@@ -18,7 +18,7 @@
                     {% endfor %}
                 </ul>
             {% else %}
-                <p class="empty-list">У заявки нет назначенных чек-листов</p>
+                <p class="empty-list">У помощника нет назначенных шаблонов</p>
             {% endif %}
         </div>
 
@@ -27,12 +27,12 @@
 
             {% if checklists %}
                 <div class="form-actions">
-                    <button type="submit" class="button">Добавить чек-листы</button>
+                    <button type="submit" class="button">Добавить шаблоны</button>
                     <a href="{{ url_for('applications.view', id=application.id) }}" class="button button-secondary">Отмена</a>
                 </div>
             {% else %}
                 <div class="form-actions">
-                    <a href="{{ url_for('applications.view', id=application.id) }}" class="button button-secondary">Вернуться к заявке</a>
+                    <a href="{{ url_for('applications.view', id=application.id) }}" class="button button-secondary">Вернуться к помощнику</a>
                 </div>
             {% endif %}
         </form>

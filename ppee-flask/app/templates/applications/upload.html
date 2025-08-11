@@ -3,11 +3,11 @@
 {% block content %}
     <div class="page-header">
         <h1>Загрузка файла</h1>
-        <a href="{{ url_for('applications.view', id=application.id) }}" class="button button-secondary">Назад к заявке</a>
+        <a href="{{ url_for('applications.view', id=application.id) }}" class="button button-secondary">Назад к помощнику</a>
     </div>
     
     <div class="form-container">
-        <h2>Заявка: {{ application.name }}</h2>
+        <h2>Помощник: {{ application.name }}</h2>
         
         <form method="post" enctype="multipart/form-data">
             <div class="form-group">

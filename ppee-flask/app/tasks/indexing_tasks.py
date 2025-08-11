@@ -48,7 +48,7 @@ def get_file_chunks_count(application_id, file_id):
     # Получаем URL из конфигурации через контекст приложения
     app = create_app()
     with app.app_context():
-        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8001')
+        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8002')
     
     try:
         response = requests.get(
@@ -69,7 +69,7 @@ def index_document_task(self, application_id, file_id):
 
     with app.app_context():
         # Получаем URL FastAPI из конфигурации
-        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8001')
+        fastapi_url = app.config.get('FASTAPI_URL', 'http://localhost:8002')
         
         # Получаем данные из БД
         application = Application.query.get(application_id)

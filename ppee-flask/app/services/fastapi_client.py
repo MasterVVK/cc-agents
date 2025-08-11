@@ -10,7 +10,7 @@ class FastAPIClient:
     """Клиент для работы с FastAPI сервисом"""
 
     def __init__(self, base_url: str = None):
-        self.base_url = base_url or current_app.config.get('FASTAPI_URL', 'http://localhost:8001')
+        self.base_url = base_url or current_app.config.get('FASTAPI_URL', 'http://localhost:8002')
 
     def get_application_stats(self, application_id: str) -> Dict[str, Any]:
         """Получает статистику по заявке"""

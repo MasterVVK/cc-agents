@@ -81,7 +81,7 @@
                                 {% endif %}
                             </td>
                             <td>
-                                {% set active_chats = app.conversations.filter_by(is_active=true).count() %}
+                                {% set active_chats = app.conversations.filter_by(status='active').count() %}
                                 {% if active_chats > 0 %}
                                     <span class="badge badge-info">{{ active_chats }}</span>
                                 {% else %}
@@ -91,7 +91,7 @@
                             <td>{{ app.created_at|to_moscow_time|strftime('%d.%m.%Y %H:%M') }}</td>
                             <td class="actions-cell">
                                 <div class="action-buttons-container">
-                                    <a href="{{ url_for('chat.assistant', assistant_id=app.id) }}" class="button button-small button-primary">💬 Чат</a>
+                                    <a href="{{ url_for('chat.chat_with_assistant', assistant_id=app.id) }}" class="button button-small button-primary">💬 Чат</a>
                                     <a href="{{ url_for('applications.edit', id=app.id) }}" class="button button-small">Настройки</a>
                                     <form method="post"
                                           action="{{ url_for('applications.delete', id=app.id) }}"

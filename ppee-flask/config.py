@@ -72,6 +72,12 @@ class Config:
 
 class DevelopmentConfig(Config):
     DEBUG = True
+    # Выполняем задачи Celery синхронно в dev, чтобы чат не зависел от воркера
+    CELERY_CONFIG = {
+        **Config.CELERY_CONFIG,
+        'task_always_eager': True,
+        'task_eager_propagates': True,
+    }
 
 
 class TestingConfig(Config):

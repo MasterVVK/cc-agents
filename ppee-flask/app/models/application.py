@@ -93,7 +93,7 @@ class Application(db.Model):
         for file in self.files:
             # Генерируем document_id так же, как при индексации
             doc_id = f"doc_{os.path.basename(file.file_path).replace(' ', '_').replace('.', '_')}"
-            mapping[doc_id] = file.original_filename
+            mapping[doc_id] = file.original_filename or file.filename
         return mapping
 
     def format_duration(self, start_time, end_time):

@@ -153,10 +153,33 @@ def view(id):
             flash('У вас нет прав для просмотра этого чек-листа', 'error')
             abort(403)
 
+    # Получаем список доступных моделей для отображения и редактирования шаблона
+    available_models = []
+    try:
+        client = FastAPIClient()
+        available_models = client.get_llm_models() or []
+    except Exception as e:
+        current_app.logger.error(f"Ошибка при получении списка моделей: {str(e)}")
+    if not available_models:
+        available_models = ['gemma3:27b', 'llama3:8b', 'mistral:7b']
+
+    # Определяем предпочитаемую модель из тегов вида 'llm:MODEL_NAME'
+    preferred_llm_model = None
+    try:
+        if checklist.tags:
+            for tag in checklist.tags:
+                if isinstance(tag, str) and tag.startswith('llm:'):
+                    preferred_llm_model = tag.split(':', 1)[1]
+                    break
+    except Exception:
+        preferred_llm_model = None
+
     return render_template('checklists/view.html',
                            title=f'Чек-лист {checklist.name}',
                            checklist=checklist,
-                           can_edit=current_user.can_edit_checklist(checklist))
+                           can_edit=current_user.can_edit_checklist(checklist),
+                           available_models=available_models,
+                           preferred_llm_model=preferred_llm_model)
 
 
 @bp.route('/<int:id>/edit', methods=['POST'])
@@ -240,6 +263,7 @@ def update_template(id):
     prompt_text = request.form.get('prompt_text', '').strip()
     response_format = request.form.get('response_format', '').strip()
     tags_str = request.form.get('tags', '')
+    llm_model = request.form.get('llm_model')  # Опционально: выбор LLM
     
     # Обрабатываем теги
     tags = []
@@ -250,7 +274,15 @@ def update_template(id):
     checklist.template_type = template_type
     checklist.prompt_text = prompt_text if prompt_text else None
     checklist.response_format = response_format if response_format else None
+    # Обновляем теги
     checklist.tags = tags if tags else None
+    # Встраиваем выбранную модель в теги в формате llm:MODEL
+    if llm_model:
+        # Удаляем старые теги с префиксом llm:
+        current_tags = checklist.tags or []
+        filtered = [t for t in current_tags if not (isinstance(t, str) and t.startswith('llm:'))]
+        filtered.append(f'llm:{llm_model}')
+        checklist.tags = filtered
 
     try:
         db.session.commit()
