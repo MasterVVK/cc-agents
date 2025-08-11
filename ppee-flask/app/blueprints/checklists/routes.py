@@ -53,13 +53,24 @@ def create():
 
         # Получаем ID оригинального чек-листа из скрытого поля формы
         original_checklist_id = request.form.get('original_checklist_id')
+        
+        # Получаем новые поля
+        template_type = request.form.get('template_type', 'support')
+        prompt_text = request.form.get('prompt_text', '').strip()
+        response_format = request.form.get('response_format', '').strip()
+        tags_str = request.form.get('tags', '')
+        
+        # Обрабатываем теги
+        tags = []
+        if tags_str:
+            tags = [tag.strip() for tag in tags_str.split(',') if tag.strip()]
 
         # Проверяем уникальность имени
         existing = Checklist.query.filter_by(name=name).first()
         if existing:
-            flash('Чек-лист с таким названием уже существует', 'error')
+            flash('Шаблон с таким названием уже существует', 'error')
             return render_template('checklists/create.html',
-                                   title='Создание чек-листа',
+                                   title='Создание шаблона',
                                    prefilled_name=name,
                                    prefilled_description=description,
                                    original_checklist=original_checklist)
@@ -75,7 +86,11 @@ def create():
                 name=name,
                 description=description,
                 user_id=current_user.id,  # Привязываем к текущему пользователю
-                is_public=is_public
+                is_public=is_public,
+                template_type=template_type,
+                prompt_text=prompt_text if prompt_text else None,
+                response_format=response_format if response_format else None,
+                tags=tags if tags else None
             )
             db.session.add(checklist)
             db.session.flush()  # Получаем ID нового чек-листа
@@ -105,7 +120,7 @@ def create():
                         db.session.add(new_param)
 
             db.session.commit()
-            flash('Чек-лист успешно создан', 'success')
+            flash('Шаблон промпта успешно создан', 'success')
             return redirect(url_for('checklists.view', id=checklist.id))
 
         except Exception as e:
@@ -152,7 +167,7 @@ def edit(id):
 
     # Проверяем права на редактирование
     if not current_user.can_edit_checklist(checklist):
-        flash('У вас нет прав для редактирования этого чек-листа', 'error')
+        flash('У вас нет прав для редактирования этого шаблона', 'error')
         abort(403)
 
     name = request.form.get('name', '').strip()
@@ -168,7 +183,7 @@ def edit(id):
 
     # Валидация
     if not name:
-        flash('Название чек-листа не может быть пустым', 'error')
+        flash('Название шаблона не может быть пустым', 'error')
         return redirect(url_for('checklists.view', id=checklist.id))
 
     # Проверяем, не занято ли имя другим чек-листом
@@ -178,7 +193,7 @@ def edit(id):
     ).first()
 
     if existing:
-        flash('Чек-лист с таким названием уже существует', 'error')
+        flash('Шаблон с таким названием уже существует', 'error')
         return redirect(url_for('checklists.view', id=checklist.id))
 
     # Проверяем, были ли изменения
@@ -199,12 +214,50 @@ def edit(id):
     if changes_made:
         try:
             db.session.commit()
-            flash('Чек-лист успешно обновлен', 'success')
+            flash('Шаблон успешно обновлен', 'success')
         except Exception as e:
             db.session.rollback()
             flash(f'Ошибка при сохранении изменений: {str(e)}', 'error')
     else:
         flash('Изменений не было', 'info')
+
+    return redirect(url_for('checklists.view', id=checklist.id))
+
+
+@bp.route('/<int:id>/update_template', methods=['POST'])
+@login_required
+def update_template(id):
+    """Обновление шаблона промпта"""
+    checklist = Checklist.query.get_or_404(id)
+
+    # Проверяем права на редактирование
+    if not current_user.can_edit_checklist(checklist):
+        flash('У вас нет прав для редактирования этого шаблона', 'error')
+        abort(403)
+
+    # Получаем данные из формы
+    template_type = request.form.get('template_type', 'support')
+    prompt_text = request.form.get('prompt_text', '').strip()
+    response_format = request.form.get('response_format', '').strip()
+    tags_str = request.form.get('tags', '')
+    
+    # Обрабатываем теги
+    tags = []
+    if tags_str:
+        tags = [tag.strip() for tag in tags_str.split(',') if tag.strip()]
+
+    # Обновляем поля
+    checklist.template_type = template_type
+    checklist.prompt_text = prompt_text if prompt_text else None
+    checklist.response_format = response_format if response_format else None
+    checklist.tags = tags if tags else None
+
+    try:
+        db.session.commit()
+        flash('Шаблон промпта успешно обновлен', 'success')
+    except Exception as e:
+        db.session.rollback()
+        flash(f'Ошибка при сохранении изменений: {str(e)}', 'error')
 
     return redirect(url_for('checklists.view', id=checklist.id))
 

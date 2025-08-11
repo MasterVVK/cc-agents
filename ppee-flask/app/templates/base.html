@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}PPEE Analyzer{% endblock %}</title>
+    <title>{% block title %}Платформа Помощников{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles-additions.css') }}">
 
@@ -423,9 +423,10 @@
             <ul>
                 <li><a href="{{ url_for('main.index') }}">Главная</a></li>
                 {% if current_user.is_authenticated %}
-                    <li><a href="{{ url_for('applications.index') }}">Заявки</a></li>
-                    <li><a href="{{ url_for('checklists.index') }}">Чек-листы</a></li>
-                    <li><a href="{{ url_for('search.index') }}">Поиск</a></li>
+                    <li><a href="{{ url_for('applications.index') }}">🤖 Помощники</a></li>
+                    <li><a href="{{ url_for('chat.index') }}">💬 Чат</a></li>
+                    <li><a href="{{ url_for('checklists.index') }}">📝 Шаблоны</a></li>
+                    <li><a href="{{ url_for('search.index') }}">🔍 Поиск</a></li>
                     {% if current_user.is_prompt_engineer() %}
                         <li><a href="{{ url_for('llm_management.index') }}">LLM</a></li>
                     {% endif %}

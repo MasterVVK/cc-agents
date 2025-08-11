@@ -127,13 +127,61 @@
             {% endif %}
 
             <div class="info-row">
-                <div class="info-label">Используется в заявках:</div>
+                <div class="info-label">Тип шаблона:</div>
+                <div class="info-value">
+                    {% set type_names = {
+                        'support': '🆘 Поддержка',
+                        'analysis': '📊 Анализ',
+                        'qa': '❓ Q&A',
+                        'custom': '⚙️ Пользовательский'
+                    } %}
+                    {{ type_names.get(checklist.template_type or 'support', '🆘 Поддержка') }}
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Рейтинг:</div>
+                <div class="info-value">
+                    {% if checklist.rating and checklist.rating > 0 %}
+                        {% set full_stars = (checklist.rating // 1)|int %}
+                        {% set has_half = (checklist.rating % 1) >= 0.5 %}
+                        {% for i in range(full_stars) %}⭐{% endfor %}
+                        {% if has_half %}✨{% endif %}
+                        ({{ "%.1f"|format(checklist.rating) }}/5)
+                    {% else %}
+                        <span class="text-muted">Нет оценок</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Использований:</div>
+                <div class="info-value">{{ checklist.usage_count or 0 }}</div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">Используется в помощниках:</div>
                 <div class="info-value">{{ checklist.applications.count() }}</div>
             </div>
 
+            <div class="info-row">
+                <div class="info-label">Теги:</div>
+                <div class="info-value">
+                    {% if checklist.tags %}
+                        {% for tag in checklist.tags %}
+                            <span class="tag">{{ tag }}</span>
+                        {% endfor %}
+                    {% else %}
+                        <span class="text-muted">Нет тегов</span>
+                    {% endif %}
+                </div>
+            </div>
+
             <div class="action-buttons">
-                <a href="{{ url_for('checklists.create_parameter', id=checklist.id) }}" class="button">Добавить параметр</a>
-                <a href="{{ url_for('checklists.copy', id=checklist.id) }}" class="button">Копировать чек-лист</a>
+                {% if can_edit %}
+                <button id="edit-template-btn" class="button">Редактировать шаблон</button>
+                {% endif %}
+                <a href="{{ url_for('checklists.copy', id=checklist.id) }}" class="button">Копировать шаблон</a>
 
                 {% set app_count = checklist.applications.count() %}
                 {% if app_count == 0 %}
@@ -153,108 +201,110 @@
             </div>
         </div>
 
-        <div class="parameters-section">
-            <h2>Параметры чек-листа</h2>
-
-            {% if checklist.parameters.all() %}
-                <div class="parameters-list">
-                    <table class="data-table" id="parameters-table">
-                        <thead>
-                            <tr>
-                                <th class="order-column" style="width: 80px;">Порядок</th>
-                                <th>Название</th>
-                                <th>Поисковый запрос</th>
-                                <th>Запрос LLM</th>
-                                <th>Настройки поиска</th>
-                                <th>Модель LLM</th>
-                                <th>Действия</th>
-                            </tr>
-                        </thead>
-                        <tbody id="sortable-parameters" class="sortable-active">
-                            {% for parameter in checklist.parameters.order_by('order_index') %}
-                                <tr data-param-id="{{ parameter.id }}" class="parameter-row">
-                                    <td class="order-column">
-                                        <div class="order-controls">
-                                            <span class="drag-handle" title="Перетащите для изменения порядка">≡</span>
-                                            <div class="arrow-controls">
-                                                {% if not loop.first %}
-                                                    <button type="button" class="arrow-btn arrow-up" data-param-id="{{ parameter.id }}" title="Переместить вверх">▲</button>
-                                                {% else %}
-                                                    <button class="arrow-btn" disabled>▲</button>
-                                                {% endif %}
-                                                {% if not loop.last %}
-                                                    <button type="button" class="arrow-btn arrow-down" data-param-id="{{ parameter.id }}" title="Переместить вниз">▼</button>
-                                                {% else %}
-                                                    <button class="arrow-btn" disabled>▼</button>
-                                                {% endif %}
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td>{{ parameter.name }}</td>
-                                    <td>{{ parameter.search_query }}</td>
-                                    <td>
-                                        {% if parameter.llm_query %}
-                                            <span class="llm-query-different" title="Отличается от поискового запроса">
-                                                {{ parameter.llm_query }}
-                                            </span>
-                                        {% else %}
-                                            <span class="llm-query-same" title="Совпадает с поисковым запросом">
-                                                <em>как поисковый запрос</em>
-                                            </span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        <span class="search-settings">
-                                            Результатов: {{ parameter.search_limit }}
-                                            {% if parameter.use_reranker %}
-                                                <br><span class="badge badge-success">Ререйтинг</span>
-                                                {% if parameter.rerank_limit == 9999 %}
-                                                    <br><span class="small">(все чанки)</span>
-                                                {% else %}
-                                                    <br><span class="small">(лимит: {{ parameter.rerank_limit }})</span>
-                                                {% endif %}
-                                            {% endif %}
-                                            {% if parameter.use_full_scan %}
-                                                <br><span class="badge badge-warning" title="При неудаче будет выполнен полный перебор всех чанков">Полное сканирование</span>
-                                            {% endif %}
-                                        </span>
-                                    </td>
-                                    <td>{{ parameter.llm_model }}</td>
-
-                                    <td>
-                                        {% if can_edit %}
-                                            <a href="{{ url_for('checklists.edit_parameter', id=parameter.id) }}"
-                                               class="button button-small">
-                                                Редактировать
-                                            </a>
-                                            <form method="post"
-                                                  action="{{ url_for('checklists.delete_parameter', id=parameter.id) }}"
-                                                  class="inline-form">
-                                                <button type="submit" class="button button-small button-danger">
-                                                    Удалить
-                                                </button>
-                                            </form>
-                                        {% else %}
-                                            <a href="{{ url_for('checklists.view_parameter', id=parameter.id) }}"
-                                               class="button button-small">
-                                                Просмотр
-                                            </a>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        <!-- Блок предпросмотра промпта -->
+        <div class="prompt-preview-section">
+            <h2>
+                Предпросмотр шаблона промпта
+                <button id="toggle-prompt-btn" class="button button-small">Показать</button>
+            </h2>
+            <div id="prompt-preview" class="prompt-preview" style="display: none;">
+                <div class="prompt-text">
+                    <pre>{{ checklist.get_prompt_template() }}</pre>
                 </div>
-
-                <div class="sort-info">
+                {% if checklist.response_format %}
+                <div class="response-format">
+                    <h3>Формат ответа:</h3>
+                    <pre>{{ checklist.response_format }}</pre>
+                </div>
+                {% endif %}
+                <div class="prompt-variables">
                     <p class="form-note">
-                        <strong>Подсказка:</strong> Вы можете изменить порядок параметров, перетаскивая строки за значок ≡ или используя стрелки ▲▼
+                        <strong>Переменные:</strong><br>
+                        <code>{query}</code> - запрос пользователя<br>
+                        <code>{context}</code> - контекст из базы знаний
                     </p>
                 </div>
-            {% else %}
-                <p class="empty-list">У этого чек-листа нет параметров. <a href="{{ url_for('checklists.create_parameter', id=checklist.id) }}">Добавить параметр</a></p>
-            {% endif %}
+            </div>
+        </div>
+
+        <!-- Блок редактирования шаблона промпта -->
+        <div class="template-edit-section" id="template-edit-section" style="display: none;">
+            <h2>Редактирование шаблона промпта</h2>
+            <form method="post" action="{{ url_for('checklists.update_template', id=checklist.id) }}">
+                <div class="form-group">
+                    <label for="edit_template_type">Тип шаблона</label>
+                    <select id="edit_template_type" name="template_type">
+                        <option value="support" {% if checklist.template_type == 'support' %}selected{% endif %}>🆘 Поддержка</option>
+                        <option value="analysis" {% if checklist.template_type == 'analysis' %}selected{% endif %}>📊 Анализ</option>
+                        <option value="qa" {% if checklist.template_type == 'qa' %}selected{% endif %}>❓ Q&A</option>
+                        <option value="custom" {% if checklist.template_type == 'custom' %}selected{% endif %}>⚙️ Пользовательский</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit_tags">Теги (через запятую)</label>
+                    <input type="text" 
+                           id="edit_tags" 
+                           name="tags" 
+                           placeholder="например: техподдержка, база знаний, FAQ"
+                           value="{{ ','.join(checklist.tags) if checklist.tags else '' }}">
+                </div>
+
+                <div class="form-group">
+                    <label for="edit_prompt_text">
+                        Текст промпта
+                        <button type="button" id="reset-prompt-btn" class="button button-small button-secondary">Сбросить на стандартный</button>
+                    </label>
+                    <textarea id="edit_prompt_text" 
+                              name="prompt_text" 
+                              rows="15"
+                              placeholder="Используйте переменные {query} и {context} в тексте промпта">{{ checklist.prompt_text or checklist.get_prompt_template() }}</textarea>
+                    <p class="form-note">
+                        <strong>Доступные переменные:</strong><br>
+                        <code>{query}</code> - запрос пользователя<br>
+                        <code>{context}</code> - контекст из базы знаний
+                    </p>
+                </div>
+
+                <div class="form-group">
+                    <label for="edit_response_format">Формат ответа (необязательно)</label>
+                    <textarea id="edit_response_format" 
+                              name="response_format" 
+                              rows="5"
+                              placeholder="Опишите желаемый формат ответа">{{ checklist.response_format or '' }}</textarea>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="button">Сохранить изменения</button>
+                    <button type="button" id="cancel-edit-btn" class="button button-secondary">Отмена</button>
+                    <button type="button" id="preview-prompt-btn" class="button button-info">Предпросмотр</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Блок примеров использования -->
+        <div class="usage-examples-section">
+            <h2>Примеры использования</h2>
+            <div class="examples-grid">
+                <div class="example-card">
+                    <h3>Пример запроса:</h3>
+                    <div class="example-content">
+                        <code>Как настроить VPN подключение?</code>
+                    </div>
+                </div>
+                <div class="example-card">
+                    <h3>Контекст из базы знаний:</h3>
+                    <div class="example-content">
+                        <code>[Здесь будет найденная информация из документов]</code>
+                    </div>
+                </div>
+                <div class="example-card">
+                    <h3>Ожидаемый ответ:</h3>
+                    <div class="example-content">
+                        <code>Структурированный ответ согласно шаблону</code>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -503,9 +553,297 @@
         .page-footer .button {
             margin: 0;
         }
+
+        /* Стили для тегов */
+        .tag {
+            display: inline-block;
+            padding: 0.3em 0.6em;
+            margin: 0.2em;
+            font-size: 0.85em;
+            background-color: #e9ecef;
+            color: #495057;
+            border-radius: 4px;
+        }
+
+        /* Стили для блока предпросмотра промпта */
+        .prompt-preview-section {
+            margin-top: 30px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+        }
+
+        .prompt-preview-section h2 {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .prompt-preview {
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        .prompt-text, .response-format {
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .prompt-text pre, .response-format pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+
+        .prompt-variables {
+            background-color: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 10px 15px;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .prompt-variables code {
+            background-color: #fff;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #e83e8c;
+        }
+        
+        /* Стили для блока редактирования шаблона */
+        .template-edit-section {
+            margin-top: 30px;
+            background-color: #f0f8ff;
+            border-radius: 8px;
+            padding: 25px;
+            border: 2px solid #e0f0ff;
+        }
+        
+        .template-edit-section h2 {
+            color: #0066cc;
+            margin-bottom: 20px;
+        }
+        
+        .template-edit-section textarea {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .template-edit-section .form-note code {
+            background-color: #fff;
+            padding: 2px 6px;
+            border-radius: 3px;
+            color: #e83e8c;
+        }
+        
+        /* Стили для примеров использования */
+        .usage-examples-section {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .examples-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+        
+        .example-card {
+            background-color: white;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        
+        .example-card h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            color: #495057;
+            font-size: 1em;
+        }
+        
+        .example-content {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+        }
+        
+        .button-info {
+            background-color: #17a2b8;
+            color: white;
+        }
+        
+        .button-info:hover {
+            background-color: #138496;
+        }
     </style>
 
     <script>
+        // Переключение видимости промпта
+        const togglePromptBtn = document.getElementById('toggle-prompt-btn');
+        const promptPreview = document.getElementById('prompt-preview');
+
+        if (togglePromptBtn && promptPreview) {
+            togglePromptBtn.addEventListener('click', function() {
+                if (promptPreview.style.display === 'none') {
+                    promptPreview.style.display = 'block';
+                    this.textContent = 'Скрыть';
+                } else {
+                    promptPreview.style.display = 'none';
+                    this.textContent = 'Показать';
+                }
+            });
+        }
+        
+        // Редактирование шаблона
+        const editTemplateBtn = document.getElementById('edit-template-btn');
+        const templateEditSection = document.getElementById('template-edit-section');
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
+        const resetPromptBtn = document.getElementById('reset-prompt-btn');
+        const previewPromptBtn = document.getElementById('preview-prompt-btn');
+        const editPromptText = document.getElementById('edit_prompt_text');
+        const editTemplateType = document.getElementById('edit_template_type');
+        
+        if (editTemplateBtn) {
+            editTemplateBtn.addEventListener('click', function() {
+                templateEditSection.style.display = 'block';
+                this.style.display = 'none';
+                // Скрываем блок предпросмотра если он открыт
+                if (promptPreview && promptPreview.style.display === 'block') {
+                    promptPreview.style.display = 'none';
+                    if (togglePromptBtn) togglePromptBtn.textContent = 'Показать';
+                }
+            });
+        }
+        
+        if (cancelEditBtn) {
+            cancelEditBtn.addEventListener('click', function() {
+                templateEditSection.style.display = 'none';
+                if (editTemplateBtn) editTemplateBtn.style.display = 'inline-block';
+            });
+        }
+        
+        // Сброс на стандартный промпт
+        if (resetPromptBtn && editPromptText && editTemplateType) {
+            resetPromptBtn.addEventListener('click', function() {
+                const templates = {
+                    'support': `Ты - эксперт службы поддержки. На основе предоставленной информации помоги решить проблему клиента.
+
+Запрос клиента: {query}
+
+Информация из базы знаний:
+{context}
+
+Задача: Предоставь структурированный ответ:
+
+## Анализ проблемы
+[Кратко опиши суть проблемы]
+
+## Решение
+[Пошаговое решение или ответ на вопрос]
+
+## Дополнительная информация
+[Если нужно что-то уточнить или есть рекомендации]`,
+                    
+                    'analysis': `Проанализируй предоставленную информацию и ответь на запрос.
+
+Запрос: {query}
+
+Контекст:
+{context}
+
+Предоставь детальный анализ с выводами.`,
+                    
+                    'qa': `Ответь на вопрос на основе предоставленной информации.
+
+Вопрос: {query}
+
+Доступная информация:
+{context}
+
+Если информации недостаточно, скажи об этом честно.`,
+                    
+                    'custom': `Запрос: {query}
+
+Контекст:
+{context}
+
+Ответь на запрос на основе предоставленной информации.`
+                };
+                
+                const selectedType = editTemplateType.value;
+                editPromptText.value = templates[selectedType] || templates['custom'];
+            });
+        }
+        
+        // Предпросмотр промпта
+        if (previewPromptBtn) {
+            previewPromptBtn.addEventListener('click', function() {
+                const promptText = editPromptText.value;
+                const responseFormat = document.getElementById('edit_response_format').value;
+                
+                // Создаём модальное окно для предпросмотра
+                const modal = document.createElement('div');
+                modal.style.cssText = `
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background: rgba(0,0,0,0.5);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 10000;
+                `;
+                
+                const content = document.createElement('div');
+                content.style.cssText = `
+                    background: white;
+                    padding: 30px;
+                    border-radius: 8px;
+                    max-width: 800px;
+                    max-height: 80vh;
+                    overflow-y: auto;
+                    position: relative;
+                `;
+                
+                content.innerHTML = `
+                    <h2>Предпросмотр промпта</h2>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 15px 0;">
+                        <pre style="white-space: pre-wrap; font-family: 'Courier New', monospace;">${promptText.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                    </div>
+                    ${responseFormat ? `
+                    <h3>Формат ответа:</h3>
+                    <div style="background: #e8f5e9; padding: 15px; border-radius: 4px;">
+                        <pre style="white-space: pre-wrap; font-family: 'Courier New', monospace;">${responseFormat.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+                    </div>
+                    ` : ''}
+                    <button onclick="this.parentElement.parentElement.remove()" style="margin-top: 20px; padding: 10px 20px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Закрыть</button>
+                `;
+                
+                modal.appendChild(content);
+                document.body.appendChild(modal);
+                
+                modal.addEventListener('click', function(e) {
+                    if (e.target === modal) {
+                        modal.remove();
+                    }
+                });
+            });
+        }
+
         // Редактирование названия
         const editNameBtn = document.getElementById('edit-name-btn');
         const nameDisplay = document.getElementById('checklist-name-display');
@@ -581,185 +919,12 @@
             deleteForm.addEventListener('submit', function(event) {
                 event.preventDefault();
 
-                const confirmMessage = 'Вы уверены, что хотите удалить чек-лист "' + {{ checklist.name|tojson|safe }} + '"?\n\n' +
+                const confirmMessage = 'Вы уверены, что хотите удалить шаблон "' + {{ checklist.name|tojson|safe }} + '"?\n\n' +
                                      'Это действие необратимо.';
 
                 if (confirm(confirmMessage)) {
                     this.submit();
                 }
-            });
-        }
-
-        // Обработчики для кнопок со стрелками (AJAX)
-        document.addEventListener('DOMContentLoaded', function() {
-            // Обработчики для стрелок вверх
-            document.querySelectorAll('.arrow-up').forEach(button => {
-                button.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    const paramId = this.getAttribute('data-param-id');
-                    moveParameter(paramId, 'up');
-                });
-            });
-
-            // Обработчики для стрелок вниз
-            document.querySelectorAll('.arrow-down').forEach(button => {
-                button.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    const paramId = this.getAttribute('data-param-id');
-                    moveParameter(paramId, 'down');
-                });
-            });
-
-            // Включаем drag & drop
-            enableDragAndDrop();
-        });
-
-        // Функция для перемещения параметра через AJAX
-        function moveParameter(paramId, direction) {
-            const url = direction === 'up'
-                ? `/checklists/parameters/${paramId}/move_up`
-                : `/checklists/parameters/${paramId}/move_down`;
-
-            fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-            })
-            .then(response => {
-                if (response.redirected) {
-                    // Перезагружаем страницу для обновления порядка
-                    window.location.reload();
-                }
-            })
-            .catch(error => {
-                console.error('Ошибка:', error);
-                alert('Ошибка при перемещении параметра');
-            });
-        }
-
-        // Функционал drag & drop
-        let draggedElement = null;
-
-        function enableDragAndDrop() {
-            const rows = document.querySelectorAll('.parameter-row');
-
-            rows.forEach(row => {
-                const dragHandle = row.querySelector('.drag-handle');
-
-                // Делаем строку перетаскиваемой только при захвате за handle
-                dragHandle.addEventListener('mousedown', function(e) {
-                    row.draggable = true;
-                });
-
-                // Отключаем перетаскивание при отпускании мыши
-                document.addEventListener('mouseup', function() {
-                    row.draggable = false;
-                });
-
-                row.addEventListener('dragstart', handleDragStart);
-                row.addEventListener('dragend', handleDragEnd);
-                row.addEventListener('dragover', handleDragOver);
-                row.addEventListener('drop', handleDrop);
-                row.addEventListener('dragenter', handleDragEnter);
-                row.addEventListener('dragleave', handleDragLeave);
-            });
-        }
-
-        function handleDragStart(e) {
-            draggedElement = this;
-            this.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-            e.dataTransfer.setData('text/html', this.innerHTML);
-        }
-
-        function handleDragEnd(e) {
-            this.classList.remove('dragging');
-            this.draggable = false;
-
-            // Убираем все классы drag-over
-            const rows = document.querySelectorAll('.parameter-row');
-            rows.forEach(row => row.classList.remove('drag-over'));
-        }
-
-        function handleDragOver(e) {
-            if (e.preventDefault) {
-                e.preventDefault();
-            }
-            e.dataTransfer.dropEffect = 'move';
-            return false;
-        }
-
-        function handleDragEnter(e) {
-            this.classList.add('drag-over');
-        }
-
-        function handleDragLeave(e) {
-            this.classList.remove('drag-over');
-        }
-
-        function handleDrop(e) {
-            if (e.stopPropagation) {
-                e.stopPropagation();
-            }
-
-            if (draggedElement !== this) {
-                // Получаем все строки
-                const tbody = document.getElementById('sortable-parameters');
-                const rows = Array.from(tbody.querySelectorAll('.parameter-row'));
-
-                // Находим индексы
-                const draggedIndex = rows.indexOf(draggedElement);
-                const targetIndex = rows.indexOf(this);
-
-                // Перемещаем элемент
-                if (draggedIndex < targetIndex) {
-                    this.parentNode.insertBefore(draggedElement, this.nextSibling);
-                } else {
-                    this.parentNode.insertBefore(draggedElement, this);
-                }
-
-                // Обновляем порядок на сервере
-                updateOrder();
-            }
-
-            return false;
-        }
-
-        function updateOrder() {
-            const rows = document.querySelectorAll('.parameter-row');
-            const order = [];
-
-            rows.forEach(row => {
-                const paramId = row.getAttribute('data-param-id');
-                if (paramId) {
-                    order.push(parseInt(paramId));
-                }
-            });
-
-            // Отправляем новый порядок на сервер
-            fetch(`/checklists/{{ checklist.id }}/parameters/reorder`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ order: order })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    console.log('Порядок обновлен');
-                    // Перезагружаем страницу для обновления кнопок
-                    window.location.reload();
-                } else {
-                    alert('Ошибка при обновлении порядка: ' + data.message);
-                    window.location.reload();
-                }
-            })
-            .catch(error => {
-                console.error('Ошибка:', error);
-                alert('Ошибка при обновлении порядка');
-                window.location.reload();
             });
         }
 

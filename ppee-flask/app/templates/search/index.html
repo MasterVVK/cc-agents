@@ -3,11 +3,11 @@
 {% block content %}
     <div class="page-header">
         <div class="header-title">
-            <h1>Семантический поиск</h1>
+            <h1>🔍 Поиск по базе знаний</h1>
             {% if current_user.is_admin() or current_user.is_prompt_engineer() %}
             <label class="checkbox-label">
                 <input type="checkbox" id="show-all-applications" onchange="toggleApplicationsView()">
-                <span>Показать все заявки</span>
+                <span>Показать всех помощников</span>
             </label>
             {% endif %}
         </div>
@@ -15,9 +15,9 @@
     <div class="search-container">
         <form id="search-form" method="post" class="search-form">
             <div class="form-group">
-                <label for="application_id">Выберите заявку</label>
+                <label for="application_id">Выберите помощника (базу знаний)</label>
                 <select id="application_id" name="application_id" required>
-                    <option value="">-- Выберите заявку --</option>
+                    <option value="">-- Выберите помощника --</option>
                     {% for app in applications %}
                         <option value="{{ app.id }}"
                                 class="application-option"

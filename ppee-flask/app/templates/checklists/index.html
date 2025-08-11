@@ -2,8 +2,52 @@
 
 {% block content %}
     <div class="page-header">
-        <h1>Чек-листы</h1>
-        <a href="{{ url_for('checklists.create') }}" class="button">Создать чек-лист</a>
+        <h1>📝 Шаблоны промптов</h1>
+        <a href="{{ url_for('checklists.create') }}" class="button">Создать шаблон</a>
+    </div>
+    
+    <!-- Фильтры и поиск -->
+    <div class="filters-section">
+        <div class="search-bar">
+            <input type="text" id="search-input" placeholder="🔍 Поиск по названию, описанию или тегам..." class="form-control">
+        </div>
+        
+        <div class="filter-row">
+            <div class="filter-group">
+                <label>Тип шаблона:</label>
+                <select id="type-filter" class="form-control">
+                    <option value="">Все типы</option>
+                    <option value="support">🆘 Поддержка</option>
+                    <option value="analysis">📊 Анализ</option>
+                    <option value="qa">❓ Q&A</option>
+                    <option value="custom">⚙️ Пользовательский</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label>Доступ:</label>
+                <select id="access-filter" class="form-control">
+                    <option value="">Все</option>
+                    <option value="public">🌍 Общие</option>
+                    <option value="private">🔒 Личные</option>
+                    <option value="mine">👤 Мои</option>
+                </select>
+            </div>
+            
+            <div class="filter-group">
+                <label>Сортировка:</label>
+                <select id="sort-filter" class="form-control">
+                    <option value="date-desc">По дате ↓</option>
+                    <option value="date-asc">По дате ↑</option>
+                    <option value="name-asc">По названию A-Z</option>
+                    <option value="name-desc">По названию Z-A</option>
+                    <option value="rating-desc">По рейтингу ↓</option>
+                    <option value="usage-desc">По использованию ↓</option>
+                </select>
+            </div>
+            
+            <button id="clear-filters" class="button button-secondary">Сбросить фильтры</button>
+        </div>
     </div>
     
     {% if checklists %}
@@ -13,19 +57,48 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Название</th>
+                                <th>Тип</th>
                                 <th>Владелец</th>
                                 <th>Доступ</th>
-                                <th>Параметры</th>
-                                <th>Используется в заявках</th>
+                                <th>Рейтинг</th>
+                                <th>Использований</th>
+                                <th>Теги</th>
                                 <th>Дата создания</th>
                                 <th>Действия</th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for checklist in checklists %}
-                            <tr class="clickable-row" data-href="{{ url_for('checklists.view', id=checklist.id) }}">
+                            <tr class="clickable-row checklist-row" 
+                                data-href="{{ url_for('checklists.view', id=checklist.id) }}"
+                                data-name="{{ checklist.name|lower }}"
+                                data-description="{{ (checklist.description or '')|lower }}"
+                                data-tags="{{ (','.join(checklist.tags) if checklist.tags else '')|lower }}"
+                                data-type="{{ checklist.template_type or 'support' }}"
+                                data-public="{{ 'public' if checklist.is_public else 'private' }}"
+                                data-owner="{{ checklist.user_id }}"
+                                data-rating="{{ checklist.rating or 0 }}"
+                                data-usage="{{ checklist.usage_count or 0 }}"
+                                data-date="{{ checklist.created_at.timestamp() }}">
                                 <td>{{ checklist.id }}</td>
-                                <td>{{ checklist.name }}</td>
+                                <td>
+                                    <strong>{{ checklist.name }}</strong>
+                                    {% if checklist.description %}
+                                    <br><small class="text-muted">{{ checklist.description[:50] }}{% if checklist.description|length > 50 %}...{% endif %}</small>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% set type_badges = {
+                                        'support': ('🆘', 'badge-primary', 'Поддержка'),
+                                        'analysis': ('📊', 'badge-info', 'Анализ'),
+                                        'qa': ('❓', 'badge-warning', 'Q&A'),
+                                        'custom': ('⚙️', 'badge-secondary', 'Пользовательский')
+                                    } %}
+                                    {% set badge_info = type_badges.get(checklist.template_type or 'support', type_badges['support']) %}
+                                    <span class="badge {{ badge_info[1] }}" title="{{ badge_info[2] }}">
+                                        {{ badge_info[0] }} {{ badge_info[2] }}
+                                    </span>
+                                </td>
                                 <td>
                                     {% if checklist.user %}
                                         {% if checklist.user.id == current_user.id %}
@@ -39,23 +112,46 @@
                                 </td>
                                 <td>
                                     {% if checklist.is_public %}
-                                        <span class="badge badge-success" title="Доступен всем пользователям">Общий</span>
+                                        <span class="badge badge-success" title="Доступен всем пользователям">🌍 Общий</span>
                                     {% else %}
-                                        <span class="badge badge-secondary" title="Доступен только владельцу">Личный</span>
+                                        <span class="badge badge-secondary" title="Доступен только владельцу">🔒 Личный</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ checklist.parameters.count() }}</td>
                                 <td>
-                                    {% set app_count = checklist.applications.count() %}
-                                    {% if app_count > 0 %}
-                                        <span class="badge badge-info" title="Чек-лист используется в заявках">
-                                            {{ app_count }}
+                                    {% if checklist.rating and checklist.rating > 0 %}
+                                        <div class="rating-display">
+                                            {% set full_stars = (checklist.rating // 1)|int %}
+                                            {% set has_half = (checklist.rating % 1) >= 0.5 %}
+                                            {% for i in range(full_stars) %}⭐{% endfor %}
+                                            {% if has_half %}✨{% endif %}
+                                            <br><small>{{ "%.1f"|format(checklist.rating) }}/5</small>
+                                        </div>
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if checklist.usage_count and checklist.usage_count > 0 %}
+                                        <span class="badge badge-info" title="Количество использований">
+                                            {{ checklist.usage_count }}
                                         </span>
                                     {% else %}
                                         <span class="badge badge-secondary">0</span>
                                     {% endif %}
                                 </td>
-                                <td>{{ checklist.created_at|to_moscow_time|strftime('%d.%m.%Y %H:%M') }}</td>
+                                <td>
+                                    {% if checklist.tags %}
+                                        {% for tag in checklist.tags[:3] %}
+                                            <span class="tag">{{ tag }}</span>
+                                        {% endfor %}
+                                        {% if checklist.tags|length > 3 %}
+                                            <span class="tag">+{{ checklist.tags|length - 3 }}</span>
+                                        {% endif %}
+                                    {% else %}
+                                        <span class="text-muted">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ checklist.created_at|to_moscow_time|strftime('%d.%m.%Y') }}</td>
                                 <td class="actions-cell">
                                     <div class="action-buttons-container">
                                         <a href="{{ url_for('checklists.copy', id=checklist.id) }}" class="button button-small">Копировать</a>
@@ -132,14 +228,126 @@
             border-radius: 0.25rem;
         }
 
+        .badge-primary {
+            color: #fff;
+            background-color: #007bff;
+        }
+
         .badge-info {
             color: #fff;
             background-color: #17a2b8;
         }
 
+        .badge-warning {
+            color: #212529;
+            background-color: #ffc107;
+        }
+
         .badge-secondary {
             color: #fff;
             background-color: #6c757d;
+        }
+
+        .badge-success {
+            color: #fff;
+            background-color: #28a745;
+        }
+
+        /* Стили для тегов */
+        .tag {
+            display: inline-block;
+            padding: 0.2em 0.5em;
+            margin: 0.1em;
+            font-size: 0.7em;
+            background-color: #e9ecef;
+            color: #495057;
+            border-radius: 3px;
+        }
+
+        /* Стили для рейтинга */
+        .rating-display {
+            text-align: center;
+        }
+
+        .rating-display small {
+            color: #6c757d;
+        }
+
+        /* Убираем лишнюю ширину столбца действий */
+        .actions-cell {
+            min-width: 150px;
+        }
+        
+        /* Стили для фильтров */
+        .filters-section {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .search-bar {
+            margin-bottom: 15px;
+        }
+        
+        .search-bar input {
+            width: 100%;
+            padding: 10px 15px;
+            font-size: 16px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            transition: border-color 0.3s;
+        }
+        
+        .search-bar input:focus {
+            border-color: #007bff;
+            outline: none;
+        }
+        
+        .filter-row {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+        
+        .filter-group {
+            flex: 1;
+            min-width: 150px;
+        }
+        
+        .filter-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #495057;
+        }
+        
+        .filter-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background-color: white;
+        }
+        
+        #clear-filters {
+            align-self: flex-end;
+        }
+        
+        /* Скрытые строки при фильтрации */
+        .checklist-row.hidden {
+            display: none;
+        }
+        
+        /* Сообщение когда нет результатов */
+        .no-results-message {
+            padding: 40px;
+            text-align: center;
+            color: #6c757d;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin: 20px 0;
         }
 
         .inline-form {
@@ -158,10 +366,16 @@
         }
     </style>
 
+    <div id="no-results" class="no-results-message" style="display: none;">
+        <h3>Ничего не найдено</h3>
+        <p>Попробуйте изменить параметры поиска или фильтры</p>
+    </div>
+
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             // Делаем строки кликабельными
             const clickableRows = document.querySelectorAll('.clickable-row');
+            const currentUserId = {{ current_user.id }};
 
             clickableRows.forEach(row => {
                 row.addEventListener('click', function(e) {
@@ -180,6 +394,119 @@
                     }
                 });
             });
+
+            // Фильтрация и поиск
+            const searchInput = document.getElementById('search-input');
+            const typeFilter = document.getElementById('type-filter');
+            const accessFilter = document.getElementById('access-filter');
+            const sortFilter = document.getElementById('sort-filter');
+            const clearButton = document.getElementById('clear-filters');
+            const rows = document.querySelectorAll('.checklist-row');
+            const table = document.querySelector('.data-table');
+            const noResults = document.getElementById('no-results');
+
+            function filterRows() {
+                const searchTerm = searchInput.value.toLowerCase();
+                const typeValue = typeFilter.value;
+                const accessValue = accessFilter.value;
+                
+                let visibleCount = 0;
+                
+                rows.forEach(row => {
+                    let show = true;
+                    
+                    // Поиск по тексту
+                    if (searchTerm) {
+                        const name = row.dataset.name || '';
+                        const description = row.dataset.description || '';
+                        const tags = row.dataset.tags || '';
+                        
+                        if (!name.includes(searchTerm) && 
+                            !description.includes(searchTerm) && 
+                            !tags.includes(searchTerm)) {
+                            show = false;
+                        }
+                    }
+                    
+                    // Фильтр по типу
+                    if (typeValue && row.dataset.type !== typeValue) {
+                        show = false;
+                    }
+                    
+                    // Фильтр по доступу
+                    if (accessValue) {
+                        if (accessValue === 'public' && row.dataset.public !== 'public') {
+                            show = false;
+                        } else if (accessValue === 'private' && row.dataset.public !== 'private') {
+                            show = false;
+                        } else if (accessValue === 'mine' && row.dataset.owner != currentUserId) {
+                            show = false;
+                        }
+                    }
+                    
+                    if (show) {
+                        row.classList.remove('hidden');
+                        visibleCount++;
+                    } else {
+                        row.classList.add('hidden');
+                    }
+                });
+                
+                // Показываем сообщение если нет результатов
+                if (visibleCount === 0) {
+                    table.style.display = 'none';
+                    noResults.style.display = 'block';
+                } else {
+                    table.style.display = 'table';
+                    noResults.style.display = 'none';
+                }
+                
+                // Применяем сортировку
+                sortRows();
+            }
+
+            function sortRows() {
+                const sortValue = sortFilter.value;
+                const tbody = table.querySelector('tbody');
+                const rowsArray = Array.from(rows).filter(row => !row.classList.contains('hidden'));
+                
+                rowsArray.sort((a, b) => {
+                    switch(sortValue) {
+                        case 'date-desc':
+                            return b.dataset.date - a.dataset.date;
+                        case 'date-asc':
+                            return a.dataset.date - b.dataset.date;
+                        case 'name-asc':
+                            return a.dataset.name.localeCompare(b.dataset.name);
+                        case 'name-desc':
+                            return b.dataset.name.localeCompare(a.dataset.name);
+                        case 'rating-desc':
+                            return b.dataset.rating - a.dataset.rating;
+                        case 'usage-desc':
+                            return b.dataset.usage - a.dataset.usage;
+                        default:
+                            return 0;
+                    }
+                });
+                
+                // Перестраиваем таблицу
+                rowsArray.forEach(row => tbody.appendChild(row));
+            }
+
+            function clearFilters() {
+                searchInput.value = '';
+                typeFilter.value = '';
+                accessFilter.value = '';
+                sortFilter.value = 'date-desc';
+                filterRows();
+            }
+
+            // Обработчики событий
+            searchInput.addEventListener('input', filterRows);
+            typeFilter.addEventListener('change', filterRows);
+            accessFilter.addEventListener('change', filterRows);
+            sortFilter.addEventListener('change', filterRows);
+            clearButton.addEventListener('click', clearFilters);
         });
     </script>
 {% endblock %}

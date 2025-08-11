@@ -31,6 +31,27 @@ class Application(db.Model):
     analysis_completed_params = db.Column(db.Integer, default=0)
     analysis_started_at = db.Column(db.DateTime)
     analysis_completed_at = db.Column(db.DateTime)
+    
+    # Новые поля для работы как Assistant (Помощник)
+    assistant_type = db.Column(db.String(50), default='support')  # support, qa, analyzer, custom
+    system_prompt = db.Column(db.Text)  # Системный промпт для помощника
+    llm_model = db.Column(db.String(100), default='gemma3:27b')  # Модель LLM
+    temperature = db.Column(db.Float, default=0.7)
+    max_tokens = db.Column(db.Integer, default=2000)
+    
+    # Флаги возможностей помощника
+    is_public = db.Column(db.Boolean, default=False)  # Публичный доступ
+    enable_search = db.Column(db.Boolean, default=True)  # Использовать поиск по базе знаний
+    enable_web_search = db.Column(db.Boolean, default=False)  # Поиск в интернете
+    
+    # Настройки поиска
+    search_limit = db.Column(db.Integer, default=10)  # Количество чанков для поиска
+    use_reranker = db.Column(db.Boolean, default=True)  # Использовать ререйтинг
+    
+    # Статистика использования помощника
+    total_conversations = db.Column(db.Integer, default=0)
+    total_messages = db.Column(db.Integer, default=0)
+    average_rating = db.Column(db.Float, default=0.0)
 
     # Отношения
     user = db.relationship('User', backref=db.backref('applications', lazy='dynamic'))
@@ -104,6 +125,76 @@ class Application(db.Model):
                 return f"{hours} ч. {minutes} мин."
             return f"{hours} ч."
 
+    # Методы для работы как Assistant
+    def get_system_prompt(self):
+        """Возвращает системный промпт для помощника"""
+        if self.system_prompt:
+            return self.system_prompt
+        
+        # Промпт по умолчанию для разных типов помощников
+        prompts = {
+            'support': """Ты - эксперт службы поддержки. Помогай пользователям решать их проблемы на основе базы знаний.
+Будь вежливым, профессиональным и конкретным в своих ответах.
+Если информации недостаточно, попроси уточнить детали.""",
+            
+            'qa': """Ты - помощник для ответов на вопросы. Отвечай точно и по существу на основе предоставленной информации.
+Если не знаешь ответ, честно скажи об этом.""",
+            
+            'analyzer': """Ты - аналитический помощник. Анализируй документы и извлекай нужную информацию.
+Структурируй ответы и выделяй ключевые моменты.""",
+            
+            'custom': """Ты - универсальный помощник. Помогай пользователям с их запросами."""
+        }
+        
+        return prompts.get(self.assistant_type, prompts['custom'])
+    
+    def can_user_access(self, user):
+        """Проверяет, может ли пользователь использовать помощника"""
+        if self.is_public:
+            return True
+        if not user or not user.is_authenticated:
+            return False
+        return self.user_id == user.id or user.is_admin()
+    
+    def increment_conversation_count(self):
+        """Увеличивает счетчик диалогов"""
+        self.total_conversations = (self.total_conversations or 0) + 1
+        db.session.commit()
+    
+    def increment_message_count(self):
+        """Увеличивает счетчик сообщений"""
+        self.total_messages = (self.total_messages or 0) + 1
+        db.session.commit()
+    
+    def update_rating(self, new_rating):
+        """Обновляет средний рейтинг помощника"""
+        if self.average_rating == 0:
+            self.average_rating = new_rating
+        else:
+            # Простое скользящее среднее
+            self.average_rating = (self.average_rating * 0.9) + (new_rating * 0.1)
+        db.session.commit()
+    
+    def to_assistant_dict(self):
+        """Преобразует в словарь для использования как Assistant"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'type': self.assistant_type,
+            'is_public': self.is_public,
+            'llm_model': self.llm_model,
+            'temperature': self.temperature,
+            'max_tokens': self.max_tokens,
+            'enable_search': self.enable_search,
+            'search_limit': self.search_limit,
+            'use_reranker': self.use_reranker,
+            'total_conversations': self.total_conversations,
+            'total_messages': self.total_messages,
+            'average_rating': self.average_rating,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
+    
     def get_status_message_with_duration(self):
         """Возвращает сообщение статуса с длительностью операции"""
         if not self.status_message:

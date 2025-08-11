@@ -3,7 +3,7 @@ from datetime import datetime
 
 
 class Checklist(db.Model):
-    """Модель чек-листа для анализа документов"""
+    """Модель чек-листа для анализа документов / Шаблон промпта для помощника"""
     __tablename__ = 'checklists'
 
     id = db.Column(db.Integer, primary_key=True)
@@ -13,6 +13,16 @@ class Checklist(db.Model):
     is_public = db.Column(db.Boolean, nullable=False, default=False)  # Общий доступ
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Новые поля для работы как PromptTemplate
+    template_type = db.Column(db.String(50), default='support')  # support, analysis, qa, custom
+    prompt_text = db.Column(db.Text)  # Текст промпта с переменными {query}, {context}
+    response_format = db.Column(db.Text)  # Формат ожидаемого ответа
+    
+    # Настройки для использования промпта
+    usage_count = db.Column(db.Integer, default=0)  # Счетчик использований
+    rating = db.Column(db.Float, default=0.0)  # Средняя оценка
+    tags = db.Column(db.JSON)  # Теги для категоризации
 
     # Отношения
     user = db.relationship('User', backref=db.backref('checklists', lazy='dynamic'))
@@ -35,6 +45,90 @@ class Checklist(db.Model):
             return 0
 
         return max_index + 1
+    
+    # Методы для работы как PromptTemplate
+    def get_prompt_template(self):
+        """Возвращает текст промпта или промпт по умолчанию"""
+        if self.prompt_text:
+            return self.prompt_text
+        
+        # Промпты по умолчанию для разных типов
+        templates = {
+            'support': """Ты - эксперт службы поддержки. На основе предоставленной информации помоги решить проблему клиента.
+
+Запрос клиента: {query}
+
+Информация из базы знаний:
+{context}
+
+Задача: Предоставь структурированный ответ:
+
+## Анализ проблемы
+[Кратко опиши суть проблемы]
+
+## Решение
+[Пошаговое решение или ответ на вопрос]
+
+## Дополнительная информация
+[Если нужно что-то уточнить или есть рекомендации]""",
+            
+            'analysis': """Проанализируй предоставленную информацию и ответь на запрос.
+
+Запрос: {query}
+
+Контекст:
+{context}
+
+Предоставь детальный анализ с выводами.""",
+            
+            'qa': """Ответь на вопрос на основе предоставленной информации.
+
+Вопрос: {query}
+
+Доступная информация:
+{context}
+
+Если информации недостаточно, скажи об этом честно.""",
+            
+            'custom': """Запрос: {query}
+
+Контекст:
+{context}
+
+Ответь на запрос на основе предоставленной информации."""
+        }
+        
+        return templates.get(self.template_type, templates['custom'])
+    
+    def increment_usage(self):
+        """Увеличивает счетчик использований"""
+        self.usage_count = (self.usage_count or 0) + 1
+        db.session.commit()
+    
+    def update_rating(self, new_rating):
+        """Обновляет рейтинг шаблона"""
+        if self.rating == 0:
+            self.rating = new_rating
+        else:
+            # Скользящее среднее
+            self.rating = (self.rating * 0.9) + (new_rating * 0.1)
+        db.session.commit()
+    
+    def to_template_dict(self):
+        """Преобразует в словарь для использования как PromptTemplate"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'type': self.template_type,
+            'prompt_text': self.get_prompt_template(),
+            'response_format': self.response_format,
+            'is_public': self.is_public,
+            'usage_count': self.usage_count,
+            'rating': self.rating,
+            'tags': self.tags,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
 
 
 class ChecklistParameter(db.Model):

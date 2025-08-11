@@ -3,17 +3,17 @@
 {% block content %}
     <div class="page-header">
         <div class="header-title">
-            <h1>Заявки</h1>
+            <h1>🤖 Помощники</h1>
             {% if current_user.is_admin() or current_user.is_prompt_engineer() %}
             <label class="checkbox-label">
                 <input type="checkbox" id="show-all-applications" onchange="toggleApplicationsView()">
-                <span>Показать все заявки</span>
+                <span>Показать всех помощников</span>
             </label>
             {% endif %}
             {% if checklists %}
             <div class="filter-dropdown">
                 <select id="checklist-filter" onchange="filterByChecklist()">
-                    <option value="all">Все чек-листы</option>
+                    <option value="all">Все шаблоны</option>
                     {% for checklist in checklists %}
                         <option value="{{ checklist.id }}">{{ checklist.name }}</option>
                     {% endfor %}
@@ -21,7 +21,7 @@
             </div>
             {% endif %}
         </div>
-        <a href="{{ url_for('applications.create') }}" class="button">Создать заявку</a>
+        <a href="{{ url_for('applications.create') }}" class="button">Создать помощника</a>
     </div>
     
     {% if applications %}
@@ -35,8 +35,9 @@
                             {% if current_user.is_admin() or current_user.is_prompt_engineer() %}
                             <th>Владелец</th>
                             {% endif %}
-                            <th>Статус</th>
-                            <th>Чек-листы</th>
+                            <th>Тип</th>
+                            <th>Рейтинг</th>
+                            <th>Активных чатов</th>
                             <th>Дата создания</th>
                             <th>Действия</th>
                         </tr>
@@ -62,24 +63,40 @@
                                 {% endif %}
                             </td>
                             {% endif %}
-                            <td><span class="status-badge status-{{ app.status }}">{{ app.get_status_display() }}</span></td>
-                            <td>{{ app.checklists|length }}</td>
+                            <td>
+                                {% set type_badges = {
+                                    'support': ('🆘', 'Поддержка'),
+                                    'knowledge': ('📚', 'База знаний'),
+                                    'assistant': ('🤖', 'Ассистент'),
+                                    'custom': ('⚙️', 'Пользовательский')
+                                } %}
+                                {% set badge_info = type_badges.get(app.assistant_type or 'support', type_badges['support']) %}
+                                <span class="type-badge">{{ badge_info[0] }} {{ badge_info[1] }}</span>
+                            </td>
+                            <td>
+                                {% if app.average_rating and app.average_rating > 0 %}
+                                    ⭐ {{ "%.1f"|format(app.average_rating) }}
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% set active_chats = app.conversations.filter_by(is_active=true).count() %}
+                                {% if active_chats > 0 %}
+                                    <span class="badge badge-info">{{ active_chats }}</span>
+                                {% else %}
+                                    <span class="text-muted">0</span>
+                                {% endif %}
+                            </td>
                             <td>{{ app.created_at|to_moscow_time|strftime('%d.%m.%Y %H:%M') }}</td>
                             <td class="actions-cell">
                                 <div class="action-buttons-container">
-                                    {% if app.status == 'analyzed' %}
-                                        <a href="{{ url_for('applications.results', id=app.id) }}" class="button button-small button-success">Результаты</a>
-                                    {% else %}
-                                        <button class="button button-small button-success"
-                                                disabled
-                                                title="{% if app.status == 'analyzing' %}Анализ в процессе{% elif app.status in ['created', 'indexing', 'indexed'] %}Заявка еще не проанализирована{% else %}Результаты недоступны{% endif %}">
-                                            Результаты
-                                        </button>
-                                    {% endif %}
+                                    <a href="{{ url_for('chat.assistant', assistant_id=app.id) }}" class="button button-small button-primary">💬 Чат</a>
+                                    <a href="{{ url_for('applications.edit', id=app.id) }}" class="button button-small">Настройки</a>
                                     <form method="post"
                                           action="{{ url_for('applications.delete', id=app.id) }}"
                                           class="inline-form"
-                                          onsubmit="return confirm('Вы уверены, что хотите удалить эту заявку? Это действие необратимо.');">
+                                          onsubmit="return confirm('Вы уверены, что хотите удалить помощника? Это действие необратимо.');">
                                         <button type="submit" class="button button-small button-danger">Удалить</button>
                                     </form>
                                 </div>
@@ -91,10 +108,10 @@
        </div>
 
         <div class="table-hint">
-            <p> Совет: Кликните по строке для просмотра заявки</p>
+            <p> Совет: Кликните по строке для просмотра помощника</p>
         </div>
     {% else %}
-        <p class="empty-list">Нет заявок. <a href="{{ url_for('applications.create') }}">Создать заявку</a></p>
+        <p class="empty-list">Нет помощников. <a href="{{ url_for('applications.create') }}">Создать помощника</a></p>
     {% endif %}
 
     <style>
@@ -199,38 +216,33 @@
             font-size: 0.9em;
         }
 
-        /* Стили для статусов */
-        .status-badge {
+        /* Стили для типов помощников */
+        .type-badge {
             display: inline-block;
-            padding: 3px 8px;
+            padding: 4px 10px;
             border-radius: 4px;
-            font-size: 0.8em;
-            color: white;
+            font-size: 0.85em;
+            background-color: #f8f9fa;
+            color: #495057;
+            border: 1px solid #dee2e6;
         }
 
-        .status-created {
-            background-color: #6c757d;
+        /* Стили для бейджей */
+        .badge {
+            display: inline-block;
+            padding: 0.25em 0.6em;
+            font-size: 0.75em;
+            font-weight: 700;
+            line-height: 1;
+            text-align: center;
+            white-space: nowrap;
+            vertical-align: baseline;
+            border-radius: 0.25rem;
         }
 
-        .status-indexing {
-            background-color: #ffc107;
-            color: #212529;
-        }
-
-        .status-indexed {
+        .badge-info {
+            color: #fff;
             background-color: #17a2b8;
-        }
-
-        .status-analyzing {
-            background-color: #007bff;
-        }
-
-        .status-analyzed {
-            background-color: #28a745;
-        }
-
-        .status-error {
-            background-color: #dc3545;
         }
 
         /* Стили для форм и кнопок */

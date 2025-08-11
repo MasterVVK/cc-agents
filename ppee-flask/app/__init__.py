@@ -106,6 +106,7 @@ def register_blueprints(app):
     from app.blueprints.search import bp as search_bp
     from app.blueprints.stats import bp as stats_bp
     from app.blueprints.users import bp as users_bp
+    from app.blueprints.chat import bp as chat_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(applications_bp)
@@ -115,6 +116,7 @@ def register_blueprints(app):
     app.register_blueprint(search_bp)
     app.register_blueprint(stats_bp)
     app.register_blueprint(users_bp)
+    app.register_blueprint(chat_bp)
 
 
 def register_template_filters(app):
