@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}Чат с помощником{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Выберите помощника для диалога</h1>
+    
+    {% if assistants %}
+    <div class="row">
+        {% for assistant in assistants %}
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">{{ assistant.name }}</h5>
+                    <p class="card-text">{{ assistant.description or 'Помощник для анализа документов' }}</p>
+                    
+                    <div class="mb-2">
+                        <small class="text-muted">
+                            <i class="fas fa-robot"></i> Тип: {{ assistant.assistant_type or 'support' }}<br>
+                            <i class="fas fa-brain"></i> Модель: {{ resolved_models.get(assistant.id) or assistant.llm_model or 'gemma3:27b' }}<br>
+                            {% if assistant.total_conversations %}
+                            <i class="fas fa-comments"></i> Диалогов: {{ assistant.total_conversations }}<br>
+                            {% endif %}
+                            {% if assistant.average_rating and assistant.average_rating > 0 %}
+                            <i class="fas fa-star"></i> Рейтинг: {{ "%.1f"|format(assistant.average_rating) }}/5<br>
+                            {% endif %}
+                        </small>
+                    </div>
+                    
+                    <a href="{{ url_for('chat.chat_with_assistant', assistant_id=assistant.id) }}" 
+                       class="btn btn-primary">
+                        <i class="fas fa-comment"></i> Начать диалог
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i> Нет доступных помощников. 
+        Сначала создайте и проиндексируйте заявку с документами.
+    </div>
+    {% endif %}
+    
+    {% if recent_conversations %}
+    <hr class="my-5">
+    <h2 class="mb-3">Последние диалоги</h2>
+    <div class="list-group">
+        {% for conv in recent_conversations %}
+        <a href="{{ url_for('chat.continue_conversation', conversation_id=conv.id) }}" 
+           class="list-group-item list-group-item-action">
+            <div class="d-flex w-100 justify-content-between">
+                <h5 class="mb-1">{{ conv.title or 'Без названия' }}</h5>
+                <small>{{ conv.updated_at.strftime('%d.%m.%Y %H:%M') if conv.updated_at else '' }}</small>
+            </div>
+            <p class="mb-1">
+                Помощник: {{ conv.assistant.name if conv.assistant else 'Неизвестный' }}
+            </p>
+            <small class="text-muted">
+                Сообщений: {{ conv.message_count }}
+            </small>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Дополнительные скрипты если нужны
+</script>
+{% endblock %}

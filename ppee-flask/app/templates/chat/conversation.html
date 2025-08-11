@@ -1,0 +1,451 @@
+{% extends "base.html" %}
+
+{% block title %}Чат с {{ assistant.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <div class="row">
+        <!-- Основной чат -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-robot"></i> {{ assistant.name }}
+                        <small class="float-end">{{ assistant.assistant_type or 'support' }}</small>
+                    </h5>
+                </div>
+                
+                <div class="card-body chat-container" id="chatContainer" style="height: 500px; overflow-y: auto;">
+                    <div id="messagesContainer">
+                        {% for message in messages %}
+                        <div class="message mb-3 {{ 'text-end' if message.role == 'user' else '' }}">
+                            <div class="d-inline-block p-2 rounded {{ 'bg-primary text-white' if message.role == 'user' else 'bg-light' }}" 
+                                 style="max-width: 70%;">
+                                <small class="d-block mb-1">
+                                    <strong>{{ 'Вы' if message.role == 'user' else 'Помощник' }}</strong>
+                                    - {{ message.created_at.strftime('%H:%M') }}
+                                </small>
+                                <div class="message-content">{{ message.content | safe }}</div>
+                                {% if message.role == 'assistant' and message.processing_time %}
+                                <small class="text-muted d-block mt-1">
+                                    Время обработки: {{ "%.2f"|format(message.processing_time) }} сек
+                                </small>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    
+                    <div id="typingIndicator" class="mb-3" style="display: none;">
+                        <div class="d-inline-block p-2 bg-light rounded typing-indicator">
+                            <span id="typingText">Помощник печатает</span>
+                            <span class="typing-dots">
+                                <span class="typing-dot">.</span>
+                                <span class="typing-dot">.</span>
+                                <span class="typing-dot">.</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card-footer">
+                    <form id="messageForm">
+                        <div class="input-group">
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="messageInput" 
+                                   placeholder="Введите ваш вопрос..."
+                                   autocomplete="off"
+                                   required>
+                            <button class="btn btn-primary" type="submit" id="sendButton">
+                                <i class="fas fa-paper-plane"></i> Отправить
+                            </button>
+                            <button class="btn btn-outline-secondary" type="button" id="toggleTechBtn" title="Показать/скрыть технические детали" style="margin-left:8px;">
+                                🐞 Детали
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Боковая панель -->
+        <div class="col-md-4">
+            <!-- Информация о помощнике -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0">О помощнике</h6>
+                </div>
+                <div class="card-body">
+                    <p>{{ assistant.description or 'Помощник для обработки запросов' }}</p>
+                    <small class="text-muted">
+                        <strong>Модель:</strong> {{ assistant.llm_model or 'gemma3:27b' }}<br>
+                        <strong>Поиск:</strong> {{ 'Включен' if assistant.enable_search else 'Выключен' }}<br>
+                        <strong>Лимит поиска:</strong> {{ assistant.search_limit }} документов<br>
+                        <strong>Температура:</strong> {{ assistant.temperature }}<br>
+                    </small>
+                </div>
+            </div>
+            
+            <!-- Шаблоны промптов -->
+            {% if prompt_templates and not hide_template_select %}
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h6 class="mb-0">Шаблоны промптов</h6>
+                </div>
+                <div class="card-body">
+                     <select class="form-select" id="templateSelect">
+                         <option value="">Стандартный промпт</option>
+                         {% for template in prompt_templates %}
+                         <option value="{{ template.id }}" {% if selected_template_id and selected_template_id == template.id %}selected{% endif %}>{{ template.name }}</option>
+                         {% endfor %}
+                     </select>
+                    <small class="text-muted d-block mt-2">
+                        Выберите шаблон для изменения стиля ответов
+                    </small>
+                </div>
+            </div>
+            {% endif %}
+            
+            <!-- Действия -->
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">Действия</h6>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-sm btn-outline-danger w-100 mb-2" type="button" onclick="clearChat()">
+                        <i class="fas fa-trash"></i> Очистить чат
+                    </button>
+                    <a href="{{ url_for('chat.index') }}" class="btn btn-sm btn-outline-secondary w-100">
+                        <i class="fas fa-arrow-left"></i> К списку помощников
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- CSS для анимированного индикатора -->
+<style>
+.typing-indicator {
+    display: inline-flex;
+    align-items: baseline;
+    padding: 12px 16px !important;
+}
+
+.typing-dots {
+    display: inline-flex;
+    align-items: baseline;
+    margin-left: 2px;
+}
+
+.typing-dot {
+    display: inline-block;
+    font-size: inherit;
+    line-height: 1;
+    font-weight: bold;
+    color: #6c757d;
+    animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(1) {
+    animation-delay: 0s;
+}
+
+.typing-dot:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.typing-dot:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes typing {
+    0%, 60%, 100% {
+        transform: translateY(0);
+        opacity: 0.3;
+    }
+    30% {
+        transform: translateY(-5px);
+        opacity: 1;
+    }
+}
+
+#typingIndicator {
+    transition: opacity 0.3s ease;
+}
+
+#typingIndicator.show {
+    display: block !important;
+    opacity: 1;
+}
+
+#typingIndicator.hide {
+    opacity: 0;
+}
+</style>
+
+<script>
+console.log('[CHAT] conversation script loaded');
+const conversationId = {{ conversation.id }};
+const chatContainer = document.getElementById('chatContainer');
+const messagesContainer = document.getElementById('messagesContainer');
+const messageForm = document.getElementById('messageForm');
+const messageInput = document.getElementById('messageInput');
+const sendButton = document.getElementById('sendButton');
+const typingIndicator = document.getElementById('typingIndicator');
+const templateSelect = document.getElementById('templateSelect');
+
+if (!messageForm || !messageInput || !messagesContainer) {
+  console.error('[CHAT] Missing DOM elements', {messageForm, messageInput, messagesContainer});
+}
+
+window.addEventListener('error', (e) => {
+  console.error('[CHAT] window error', e.error || e.message);
+});
+
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[CHAT] unhandledrejection', e.reason);
+});
+
+// Автоскролл вниз
+function scrollToBottom() {
+    chatContainer.scrollTop = chatContainer.scrollHeight;
+}
+
+// Добавление сообщения в чат
+function addMessage(content, role, time = null) {
+    const isUser = role === 'user';
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message mb-3 ${isUser ? 'text-end' : ''}`;
+    
+    const now = time || new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    
+    messageDiv.innerHTML = `
+        <div class="d-inline-block p-2 rounded ${isUser ? 'bg-primary text-white' : 'bg-light'}" 
+             style="max-width: 70%;">
+            <small class="d-block mb-1">
+                <strong>${isUser ? 'Вы' : 'Помощник'}</strong> - ${now}
+            </small>
+            <div class="message-content">${content}</div>
+        </div>
+    `;
+    
+    messagesContainer.appendChild(messageDiv);
+    // Рендерим Markdown в только что добавленном сообщении
+    renderMarkdownIn(messageDiv.querySelector('.message-content'));
+    scrollToBottom();
+}
+// Переключатель отображения тех. деталей
+const toggleBtn = document.getElementById('toggleTechBtn');
+if (toggleBtn) {
+  toggleBtn.addEventListener('click', () => {
+    document.querySelectorAll('.tech-details').forEach(el => {
+      el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+    });
+  });
+}
+
+// Рендеринг Markdown внутри конкретного контейнера .message-content
+function renderMarkdownIn(container) {
+  if (!container) return;
+  try {
+    // Отделяем блок тех.деталей, чтобы не портить его
+    const tech = container.querySelector('.tech-details');
+    const techHtml = tech ? tech.outerHTML : '';
+    if (tech) tech.remove();
+
+    const src = container.textContent; // чистый текст
+    // Настройка marked с подсветкой и безопасной очисткой
+    marked.setOptions({
+      breaks: true,
+      highlight: function(code, lang) {
+        try { return hljs.highlight(code, {language: lang}).value; } catch(e) {
+          try { return hljs.highlightAuto(code).value; } catch(e2) { return code; }
+        }
+      }
+    });
+    const rawHtml = marked.parse(src);
+    const safeHtml = DOMPurify.sanitize(rawHtml, {USE_PROFILES: {html: true}});
+    container.innerHTML = safeHtml + techHtml;
+  } catch (e) {
+    console.error('[CHAT] markdown render error', e);
+  }
+}
+
+// Рендерим Markdown для уже загруженных сообщений
+document.querySelectorAll('.message-content').forEach(renderMarkdownIn);
+
+// Отправка сообщения
+messageForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    console.log('[CHAT] submit fired');
+    
+    const message = messageInput.value.trim();
+    if (!message) return;
+    
+    // Добавляем сообщение пользователя
+    addMessage(message, 'user');
+    
+    // Очищаем поле и блокируем кнопку
+    messageInput.value = '';
+    sendButton.disabled = true;
+    
+    // Показываем индикатор
+    typingIndicator.style.display = 'block';
+    typingIndicator.classList.add('show');
+    const typingText = document.getElementById('typingText');
+    if (typingText) typingText.textContent = 'Помощник печатает';
+    
+    let waiting = false;
+    try {
+        // Отправляем сообщение
+        const response = await fetch('/chat/api/send_message', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: JSON.stringify({
+                conversation_id: conversationId,
+                message: message,
+                template_id: templateSelect ? templateSelect.value : null
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'pending' && data.task_id) {
+            // Ждем ответ
+            waiting = true;
+            await waitForResponse(data.task_id, data.message_id);
+        } else if (data.status === 'success' && data.message) {
+            // Eager-режим: ответ уже готов
+            addMessage(data.message, 'assistant');
+        } else if (data.status === 'error') {
+            addMessage(`Ошибка: ${data.message}`, 'assistant');
+        }
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        addMessage('Произошла ошибка при отправке сообщения', 'assistant');
+    } finally {
+        sendButton.disabled = false;
+        if (!waiting) {
+          // Скрываем индикатор с анимацией
+          typingIndicator.classList.remove('show');
+          typingIndicator.classList.add('hide');
+          setTimeout(() => {
+            typingIndicator.style.display = 'none';
+            typingIndicator.classList.remove('hide');
+          }, 300);
+        }
+    }
+});
+
+// Ожидание ответа от задачи — возвращаем Promise, чтобы реально ждать завершения
+function waitForResponse(taskId, messageId) {
+    return new Promise((resolve) => {
+        const maxAttempts = 120; // 120 секунд максимум, т.к. LLM может отвечать до 60с
+        let attempts = 0;
+
+        const timer = setInterval(async () => {
+            attempts++;
+
+            try {
+                const response = await fetch(`/chat/api/task_status/${taskId}?conversation_id=${conversationId}&message_id=${messageId || ''}`);
+                const data = await response.json();
+
+                if (data.status === 'progress') {
+                    const typingText = document.getElementById('typingText');
+                    if (typingText && data.message) {
+                        // Убираем точки из текста, если они есть
+                        const cleanMessage = data.message.replace(/\.{3}$/, '');
+                        typingText.textContent = cleanMessage;
+                    }
+                } else if (data.status === 'success') {
+                    clearInterval(timer);
+                    addMessage(data.message, 'assistant');
+                    // Скрываем индикатор
+                    typingIndicator.classList.remove('show');
+                    typingIndicator.classList.add('hide');
+                    setTimeout(() => {
+                        typingIndicator.style.display = 'none';
+                        typingIndicator.classList.remove('hide');
+                    }, 300);
+                    return resolve('success');
+                }
+
+                if (data.status === 'error') {
+                    clearInterval(timer);
+                    addMessage(`Ошибка: ${data.message}`, 'assistant');
+                    // Скрываем индикатор
+                    typingIndicator.classList.remove('show');
+                    typingIndicator.classList.add('hide');
+                    setTimeout(() => {
+                        typingIndicator.style.display = 'none';
+                        typingIndicator.classList.remove('hide');
+                    }, 300);
+                    return resolve('error');
+                }
+
+                if (attempts >= maxAttempts) {
+                    clearInterval(timer);
+                    addMessage('Превышено время ожидания ответа', 'assistant');
+                    // Скрываем индикатор
+                    typingIndicator.classList.remove('show');
+                    typingIndicator.classList.add('hide');
+                    setTimeout(() => {
+                        typingIndicator.style.display = 'none';
+                        typingIndicator.classList.remove('hide');
+                    }, 300);
+                    return resolve('timeout');
+                }
+
+            } catch (error) {
+                clearInterval(timer);
+                console.error('Ошибка проверки статуса:', error);
+                addMessage('Ошибка при получении ответа', 'assistant');
+                // Скрываем индикатор
+                typingIndicator.classList.remove('show');
+                typingIndicator.classList.add('hide');
+                setTimeout(() => {
+                    typingIndicator.style.display = 'none';
+                    typingIndicator.classList.remove('hide');
+                }, 300);
+                return resolve('network_error');
+            }
+        }, 1000);
+    });
+}
+
+// Очистка чата
+async function clearChat() {
+    if (!confirm('Вы уверены, что хотите очистить историю диалога?')) return;
+    
+    try {
+        const response = await fetch(`/chat/api/conversation/${conversationId}/clear`, {
+            method: 'POST'
+        });
+        
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            messagesContainer.innerHTML = '';
+            alert('История диалога очищена');
+        } else {
+            alert(`Ошибка: ${data.message}`);
+        }
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('Ошибка при очистке истории');
+    }
+}
+
+// Инициализация
+scrollToBottom();
+messageInput.focus();
+</script>
+{% endblock %}
