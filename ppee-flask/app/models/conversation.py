@@ -33,7 +33,7 @@ class Conversation(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Отношения
-    assistant = db.relationship('Application', backref=db.backref('conversations', lazy='dynamic'))
+    # Убираем backref здесь, так как он определен в Application
     user = db.relationship('User', backref=db.backref('conversations', lazy='dynamic'))
     messages = db.relationship('Message', backref='conversation', lazy='dynamic', cascade='all, delete-orphan', order_by='Message.created_at')
     

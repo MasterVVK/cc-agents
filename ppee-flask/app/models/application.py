@@ -60,6 +60,9 @@ class Application(db.Model):
                                         cascade='all, delete-orphan')
     checklists = db.relationship('Checklist', secondary=application_checklists,
                                  backref=db.backref('applications', lazy='dynamic'))
+    # Добавляем связь с диалогами с каскадным удалением
+    conversations = db.relationship('Conversation', backref='assistant', lazy='dynamic',
+                                   cascade='all, delete-orphan', foreign_keys='Conversation.assistant_id')
 
     def __repr__(self):
         return f'<Application {self.id}: {self.name}>'

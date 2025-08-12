@@ -68,7 +68,7 @@ class Config:
 
     DEFAULT_LLM_MODEL = os.environ.get('DEFAULT_LLM_MODEL') or 'gemma3:27b-it-qat'
 
-    DEFAULT_HYBRID_THRESHOLD = 50
+    DEFAULT_HYBRID_THRESHOLD = 10
 
 class DevelopmentConfig(Config):
     DEBUG = True

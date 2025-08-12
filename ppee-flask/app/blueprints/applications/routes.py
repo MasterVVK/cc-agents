@@ -575,6 +575,16 @@ def delete(id):
         # ДОБАВЛЕНО: Очистка связей с чек-листами
         application.checklists = []
         db.session.commit()
+        
+        # Удаляем связанные диалоги и сообщения
+        from app.models.conversation import Conversation, Message
+        conversations = Conversation.query.filter_by(assistant_id=application.id).all()
+        for conv in conversations:
+            # Удаляем сообщения диалога
+            Message.query.filter_by(conversation_id=conv.id).delete()
+            # Удаляем сам диалог
+            db.session.delete(conv)
+        db.session.commit()
 
         # Удаляем файлы
         for file in application.files:
